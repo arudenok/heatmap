@@ -1,0 +1,27 @@
+package ru.heatmap.registry.domain
+
+import jakarta.persistence.*
+import java.time.Instant
+
+/**
+ * Факт скачивания инструмента пользователем - используется, чтобы засчитывать
+ * в счётчик скачиваний только уникальные скачивания (один пользователь - не более одного раза).
+ */
+@Entity
+@Table(name = "tool_download", uniqueConstraints = [UniqueConstraint(columnNames = ["tool_id", "user_id"])])
+class ToolDownload(
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    var id: Long? = null,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tool_id", nullable = false)
+    var tool: AiTool,
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    var user: AppUser,
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    var createdAt: Instant = Instant.now()
+)

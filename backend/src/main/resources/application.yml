@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: heatmap-registry
+
+  datasource:
+    # Файловая база H2 - не требует поднятия отдельной СУБД,
+    # данные хранятся в ./data/heatmap-local.mv.db рядом с приложением.
+    url: ${DB_URL:jdbc:h2:file:./data/heatmap-local;AUTO_SERVER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    database-platform: org.hibernate.dialect.H2Dialect
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: true
+
+  h2:
+    console:
+      enabled: ${H2_CONSOLE_ENABLED:false}
+      path: /h2-console
+
+server:
+  port: ${SERVER_PORT:8080}
+
+heatmap:
+  jwt:
+    secret: ${JWT_SECRET:c2VjcmV0LWtleS1mb3ItaGVhdG1hcC1yZWdpc3RyeS1kZXYtb25seS1jaGFuZ2UtbWU=}
+    access-token-ttl-minutes: ${JWT_ACCESS_TTL_MIN:720}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    ru.heatmap: INFO
