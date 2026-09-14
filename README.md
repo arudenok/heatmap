@@ -117,38 +117,3 @@ docker compose up --build
 | PATCH  | `/api/admin/users/{id}/role`      | ADMIN          | Сменить роль                               |
 | PATCH  | `/api/admin/users/{id}/enabled`   | ADMIN          | Заблокировать/разблокировать               |
 | PATCH  | `/api/admin/impact/rows/{id}`     | ADMIN          | Изменить значение строки метрики           |
-
-## Важное примечание про сборку в этой сессии
-
-Backend собирался и проверялся здесь только через ручной построчный код-ревью: в этой
-песочнице исходящий доступ к Maven Central (repo.maven.apache.org и его зеркалам)
-заблокирован политикой сети, поэтому выполнить `mvn package` и получить обратную связь
-компилятора не удалось. Код написан на стандартных, давно стабильных API Spring Boot 3.3 /
-Kotlin 1.9 / jjwt 0.12, поэтому должен собраться без проблем на машине с обычным доступом
-в интернет — но при первом запуске стоит внимательно посмотреть вывод `mvn spring-boot:run`.
-Frontend, наоборот, полностью установлен (`npm install`) и собран (`npm run build`) прямо
-в этой сессии — ошибок нет.
-
-## Backend не стартует: "IllegalArgumentException: <версия JDK>" при `mvn spring-boot:run`
-
-Это не баг в коде проекта, а известная проблема самого `kotlin-maven-plugin` 1.9.x
-(https://youtrack.jetbrains.com/issue/KT-83610): его встроенный парсер версии Java не
-понимает очень новые JDK (25, 26...). Если `java -version` в терминале показывает
-что-то вроде `26.0.2`, компилятор Kotlin просто падает при старте, ещё до компиляции.
-
-**Быстрое решение** — собирать проект под JDK 21 (проект и так таргетируется на 21):
-
-```bash
-brew install openjdk@21   # если ещё не установлен
-cd backend
-./run.sh                  # сам подставит JAVA_HOME на JDK 21 и запустит mvn spring-boot:run
-```
-
-Либо вручную, без скрипта:
-
-```bash
-export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
-mvn spring-boot:run
-```
-
-Проверить, какие JDK вообще установлены на Mac: `/usr/libexec/java_home -V`.
