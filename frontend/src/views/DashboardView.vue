@@ -48,6 +48,8 @@ const modalOpen = ref(false)
 const detailOpen = ref(false)
 const detailTool = ref(null)
 const ratingPromptTool = ref(null)
+// Заявка, которую сейчас редактируют в AddToolModal - null означает режим создания новой.
+const editingTool = ref(null)
 
 const tabTitles = {
   ALL: '📋 Все инструменты · полный реестр',
@@ -123,7 +125,20 @@ function openAddModal() {
     router.push({ name: 'login', query: { redirect: '/' } })
     return
   }
+  editingTool.value = null
   modalOpen.value = true
+}
+
+// Редактировать можно только свою заявку, ещё не прошедшую модерацию -
+// это дублирует проверку на бэкенде (ToolService.update), но не даёт открыть форму заведомо впустую.
+function openEditModal(tool) {
+  editingTool.value = tool
+  modalOpen.value = true
+}
+
+async function onToolUpdated() {
+  editingTool.value = null
+  await Promise.all([loadMine(), loadTools(), loadTopData()])
 }
 
 function resetFilters() {
@@ -224,6 +239,14 @@ onMounted(() => {
             <span class="badge" :class="t.status === 'REJECTED' ? 'badge-danger' : 'badge-warn'">
               {{ t.status === 'REJECTED' ? 'Отклонено' : 'На модерации' }}
             </span>
+            <button
+              v-if="t.status === 'PENDING'"
+              class="btn btn-ghost btn-sm"
+              type="button"
+              @click="openEditModal(t)"
+            >
+              Редактировать
+            </button>
             <button class="btn btn-ghost btn-sm" type="button" @click="onDeleteTool(t)">Отозвать</button>
           </div>
         </div>
@@ -285,7 +308,13 @@ onMounted(() => {
       </footer>
     </main>
 
-    <AddToolModal v-model="modalOpen" :filter-options="filterOptions" @created="onToolCreated" />
+    <AddToolModal
+      v-model="modalOpen"
+      :filter-options="filterOptions"
+      :edit-tool="editingTool"
+      @created="onToolCreated"
+      @updated="onToolUpdated"
+    />
     <ToolDetailModal
       v-model="detailOpen"
       :tool="detailTool"

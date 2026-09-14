@@ -1,16 +1,21 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch, computed } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
 import IconBase from './IconBase.vue'
 import MultiSelectDropdown from './MultiSelectDropdown.vue'
 import ComboboxInput from './ComboboxInput.vue'
 
 const props = defineProps({
-  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], segments: [] }) }
+  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], segments: [] }) },
+  // Если передан - модалка работает в режиме редактирования уже существующей заявки
+  // (PATCH вместо POST), а не создания новой.
+  editTool: { type: Object, default: null }
 })
 
 const open = defineModel({ default: false })
-const emit = defineEmits(['created'])
+const emit = defineEmits(['created', 'updated'])
+
+const isEditMode = computed(() => !!props.editTool)
 
 const form = reactive({
   name: '',
@@ -23,6 +28,25 @@ const form = reactive({
 
 const loading = ref(false)
 const error = ref('')
+
+// При открытии модалки в режиме редактирования - подставляем текущие данные заявки в форму.
+watch(
+  () => [open.value, props.editTool],
+  ([isOpen, tool]) => {
+    if (!isOpen) return
+    if (tool) {
+      form.name = tool.name
+      form.description = tool.description
+      form.roles = [...tool.roles]
+      form.framework = tool.framework
+      form.segments = [...tool.segments]
+      form.sourceLabel = tool.sourceLabel
+    } else {
+      resetForm()
+    }
+  },
+  { immediate: true }
+)
 
 // Незаполненные/некорректные обязательные поля подсвечиваются красным при попытке отправки.
 const invalidFields = reactive({
@@ -43,6 +67,16 @@ function clearFieldError(field) {
 function close() {
   open.value = false
   error.value = ''
+}
+
+function resetForm() {
+  form.name = ''
+  form.description = ''
+  form.roles = []
+  form.framework = ''
+  form.segments = []
+  form.sourceLabel = ''
+  Object.keys(invalidFields).forEach((key) => (invalidFields[key] = false))
 }
 
 function validate() {
@@ -82,18 +116,17 @@ async function onSubmit() {
 
   loading.value = true
   try {
-    const { data } = await api.post('/tools', { ...form })
-    emit('created', data)
-    form.name = ''
-    form.description = ''
-    form.roles = []
-    form.framework = ''
-    form.segments = []
-    form.sourceLabel = ''
-    Object.keys(invalidFields).forEach((key) => (invalidFields[key] = false))
+    if (isEditMode.value) {
+      const { data } = await api.patch(`/tools/${props.editTool.id}`, { ...form })
+      emit('updated', data)
+    } else {
+      const { data } = await api.post('/tools', { ...form })
+      emit('created', data)
+    }
+    resetForm()
     open.value = false
   } catch (e) {
-    error.value = extractErrorMessage(e, 'Не удалось отправить заявку')
+    error.value = extractErrorMessage(e, isEditMode.value ? 'Не удалось сохранить изменения' : 'Не удалось отправить заявку')
   } finally {
     loading.value = false
   }
@@ -104,11 +137,15 @@ async function onSubmit() {
   <div v-if="open" class="modal-backdrop" @click.self="close">
     <div class="modal panel">
       <div class="modal-header">
-        <h3><IconBase name="plus" :size="17" /> Добавить инструмент</h3>
+        <h3>
+          <IconBase :name="isEditMode ? 'edit' : 'plus'" :size="17" />
+          {{ isEditMode ? 'Редактировать заявку' : 'Добавить инструмент' }}
+        </h3>
         <button class="icon-btn" type="button" @click="close"><IconBase name="x" :size="16" /></button>
       </div>
 
-      <p class="modal-hint">Заявка попадёт на этап <strong>Access</strong> и будет опубликована после проверки администратором.</p>
+      <p v-if="isEditMode" class="modal-hint">Изменения сохранятся в заявке, которая всё ещё находится на модерации.</p>
+      <p v-else class="modal-hint">Заявка попадёт на этап <strong>Access</strong> и будет опубликована после проверки администратором.</p>
 
       <form class="modal-form" @submit.prevent="onSubmit">
         <div class="field">
@@ -193,7 +230,7 @@ async function onSubmit() {
 
         <div class="modal-actions">
           <button type="submit" class="btn btn-primary" :disabled="loading">
-            {{ loading ? 'Отправляем…' : 'Отправить на модерацию' }}
+            {{ isEditMode ? (loading ? 'Сохраняем…' : 'Сохранить изменения') : (loading ? 'Отправляем…' : 'Отправить на модерацию') }}
           </button>
         </div>
       </form>
