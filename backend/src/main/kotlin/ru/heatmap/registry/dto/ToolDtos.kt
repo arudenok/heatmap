@@ -32,15 +32,23 @@ data class ToolResponse(
     val ratingsCount: Int,
     val myRating: Int?,
     val canManage: Boolean,
+    val rejectionReason: String?,
+    val notesCount: Long,
     val createdAt: Instant,
     val updatedAt: Instant
+)
+
+data class RejectToolRequest(
+    @field:NotBlank(message = "Укажите причину отклонения")
+    @field:Size(max = 1000)
+    val reason: String
 )
 
 data class RateToolRequest(
     @field:NotNull(message = "Укажите оценку")
     @field:Min(1, message = "Оценка - от 1 до 5")
     @field:Max(5, message = "Оценка - от 1 до 5")
-    var rating: Int
+    val rating: Int
 )
 
 data class CreateToolRequest(

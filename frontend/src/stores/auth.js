@@ -30,8 +30,8 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('heatmap_user', JSON.stringify(user))
     },
 
-    async login(usernameOrEmail, password) {
-      const { data } = await api.post('/auth/login', { usernameOrEmail, password })
+    async login(username, password) {
+      const { data } = await api.post('/auth/login', { username, password })
       this.persist(data.token, data.user)
       return data
     },
@@ -49,11 +49,12 @@ export const useAuthStore = defineStore('auth', {
       return data
     },
 
+    // Профиль возвращает свежий токен вместе с пользователем: если логин Сигма (=username)
+    // поменялся, старый токен перестанет проходить аутентификацию - обязательно сохраняем новый.
     async updateProfile(payload) {
       const { data } = await api.patch('/auth/me', payload)
-      this.user = data
-      localStorage.setItem('heatmap_user', JSON.stringify(data))
-      return data
+      this.persist(data.token, data.user)
+      return data.user
     },
 
     logout() {

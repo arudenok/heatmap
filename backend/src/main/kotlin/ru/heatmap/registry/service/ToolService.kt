@@ -5,6 +5,7 @@ import ru.heatmap.registry.dto.*
 import ru.heatmap.registry.repository.AiToolRepository
 import ru.heatmap.registry.repository.AppUserRepository
 import ru.heatmap.registry.repository.ToolDownloadRepository
+import ru.heatmap.registry.repository.ToolNoteRepository
 import ru.heatmap.registry.repository.ToolRatingRepository
 import ru.heatmap.registry.security.UserPrincipal
 import ru.heatmap.registry.web.BadRequestException
@@ -22,7 +23,9 @@ class ToolService(
     private val aiToolRepository: AiToolRepository,
     private val appUserRepository: AppUserRepository,
     private val toolRatingRepository: ToolRatingRepository,
-    private val toolDownloadRepository: ToolDownloadRepository
+    private val toolDownloadRepository: ToolDownloadRepository,
+    private val toolNoteRepository: ToolNoteRepository,
+    private val notificationService: NotificationService
 ) {
 
     /** Вкладки реестра: TOP - витрина лучших решений, остальные - этапы PDLC. */
@@ -156,7 +159,9 @@ class ToolService(
             createdBy = owner
         )
         // Новый инструмент всегда PENDING - в число опубликованных топ-инструментов попасть не может.
-        return aiToolRepository.save(tool).toResponse(principal, emptySet())
+        val saved = aiToolRepository.save(tool)
+        notificationService.notifyAdminsOfNewSubmission(saved)
+        return saved.toResponse(principal, emptySet())
     }
 
     @Transactional
@@ -167,9 +172,10 @@ class ToolService(
         if (!isAdmin && !isOwner) {
             throw ForbiddenException("Недостаточно прав для редактирования этого инструмента")
         }
-        if (!isAdmin && tool.status != ToolStatus.PENDING) {
-            throw ForbiddenException("Опубликованный инструмент может изменить только администратор")
-        }
+        // Автор может редактировать инструмент в любом статусе (PENDING/PUBLISHED/REJECTED) -
+        // правки уже опубликованного или отклонённого инструмента отправляют его на повторную
+        // модерацию (см. ниже), поэтому запрещать редактирование по статусу больше не нужно.
+        val wasPublishedOrRejected = tool.status == ToolStatus.PUBLISHED || tool.status == ToolStatus.REJECTED
 
         request.name?.let { tool.name = it.trim() }
         request.description?.let { tool.description = it.trim() }
@@ -185,6 +191,12 @@ class ToolService(
             request.dau?.let { tool.dau = it }
             request.efficiencyPct?.let { tool.efficiencyPct = it }
             // "Топ" больше нельзя выставить вручную - плашка присваивается автоматически (см. computeTopIds).
+        } else if (wasPublishedOrRejected) {
+            // Автор отредактировал уже опубликованный или отклонённый инструмент -
+            // отправляем его на повторную модерацию и сбрасываем прежнюю причину отклонения.
+            tool.status = ToolStatus.PENDING
+            tool.rejectionReason = null
+            notificationService.notifyAdminsOfNewSubmission(tool)
         }
         tool.updatedAt = Instant.now()
         return aiToolRepository.save(tool).toResponse(principal, computeTopIds())
@@ -269,25 +281,32 @@ class ToolService(
     }
 
     // Инструменты на модерации всегда PENDING - в число опубликованных топ-инструментов попасть не могут.
-    fun pendingModeration(): List<ToolResponse> =
-        aiToolRepository.findAll(statusSpec(ToolStatus.PENDING)).map { it.toResponse(null, emptySet()) }
+    // principal передаётся (хотя эндпоинт и так доступен только ADMIN), чтобы в ответе корректно
+    // считался notesCount - он виден только администратору (см. toResponse).
+    fun pendingModeration(principal: UserPrincipal): List<ToolResponse> =
+        aiToolRepository.findAll(statusSpec(ToolStatus.PENDING)).map { it.toResponse(principal, emptySet()) }
 
     @Transactional
     fun approve(id: Long): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         tool.status = ToolStatus.PUBLISHED
+        tool.rejectionReason = null
         tool.updatedAt = Instant.now()
         val saved = aiToolRepository.save(tool)
+        notificationService.notifyOwnerOfModerationResult(saved, approved = true, reason = null)
         return saved.toResponse(null, computeTopIds())
     }
 
     @Transactional
-    fun reject(id: Long): ToolResponse {
+    fun reject(id: Long, reason: String): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         tool.status = ToolStatus.REJECTED
+        tool.rejectionReason = reason.trim()
         tool.updatedAt = Instant.now()
         // Отклонённый инструмент не может быть "Топ".
-        return aiToolRepository.save(tool).toResponse(null, emptySet())
+        val saved = aiToolRepository.save(tool)
+        notificationService.notifyOwnerOfModerationResult(saved, approved = false, reason = tool.rejectionReason)
+        return saved.toResponse(null, emptySet())
     }
 
     private inline fun <reified T : Enum<T>> parseEnum(value: String, fieldLabel: String): T =
@@ -335,6 +354,9 @@ class ToolService(
         val myRating = principal?.let {
             toolRatingRepository.findByToolIdAndUserId(this.id!!, it.id)?.value
         }
+        // Заметки - внутренняя переписка администраторов, обычным пользователям даже количество
+        // заметок видно не должно быть - поэтому считаем только для ADMIN.
+        val notesCount = if (principal?.role == "ADMIN") toolNoteRepository.countByToolId(this.id!!) else 0L
         return ToolResponse(
             id = this.id!!,
             name = this.name,
@@ -355,6 +377,8 @@ class ToolService(
             ratingsCount = this.ratingsCount,
             myRating = myRating,
             canManage = canManage,
+            rejectionReason = this.rejectionReason,
+            notesCount = notesCount,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt
         )

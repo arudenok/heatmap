@@ -9,7 +9,7 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const usernameOrEmail = ref('')
+const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -18,7 +18,7 @@ async function onSubmit() {
   error.value = ''
   loading.value = true
   try {
-    await auth.login(usernameOrEmail.value.trim(), password.value)
+    await auth.login(username.value.trim(), password.value)
     router.replace(route.query.redirect?.toString() || { name: 'dashboard' })
   } catch (e) {
     error.value = extractErrorMessage(e, 'Не удалось войти. Проверьте логин и пароль')
@@ -44,8 +44,8 @@ async function onSubmit() {
 
       <form class="auth-form" @submit.prevent="onSubmit">
         <div class="field">
-          <label for="login">Имя пользователя или логин Сигма</label>
-          <input id="login" v-model="usernameOrEmail" class="input" type="text" autocomplete="username" required />
+          <label for="login">Логин Сигма</label>
+          <input id="login" v-model="username" class="input" type="text" autocomplete="username" required />
         </div>
         <div class="field">
           <label for="password">Пароль</label>
@@ -66,8 +66,8 @@ async function onSubmit() {
 
       <div class="auth-demo">
         <div class="auth-demo-title">Демо-доступы</div>
-        <div class="auth-demo-row"><span>Администратор</span><code>admin / admin123</code></div>
-        <div class="auth-demo-row"><span>Пользователь</span><code>ivanov / user123</code></div>
+        <div class="auth-demo-row"><span>Администратор</span><code>1000 / admin123</code></div>
+        <div class="auth-demo-row"><span>Пользователь</span><code>1001 / user123</code></div>
       </div>
     </div>
   </div>

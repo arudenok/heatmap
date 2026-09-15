@@ -1,6 +1,9 @@
 <script setup>
+import { ref } from 'vue'
 import api from '../services/api'
+import { useAuthStore } from '../stores/auth'
 import IconBase from './IconBase.vue'
+import ToolNotesModal from './ToolNotesModal.vue'
 
 const props = defineProps({
   tool: { type: Object, default: null }
@@ -8,6 +11,11 @@ const props = defineProps({
 
 const open = defineModel({ default: false })
 const emit = defineEmits(['delete', 'downloaded'])
+const auth = useAuthStore()
+
+// Заметки администраторов - отдельная модалка поверх этой же карточки инструмента,
+// открывается только администраторам (см. кнопку "Заметки" в modal-actions).
+const notesOpen = ref(false)
 
 const stageMeta = {
   ACCESS: { label: 'Access', class: 'stage-access' },
@@ -67,7 +75,7 @@ function formatDate(value) {
 </script>
 
 <template>
-  <div v-if="open && tool" class="modal-backdrop" @click.self="close">
+  <div v-if="open && tool && !notesOpen" class="modal-backdrop" @click.self="close">
     <div class="modal panel">
       <div class="modal-header">
         <h3>
@@ -122,14 +130,25 @@ function formatDate(value) {
       </div>
 
       <div class="modal-actions">
-        <button
-          v-if="tool.canManage"
-          type="button"
-          class="btn btn-danger-ghost"
-          @click="onDelete"
-        >
-          <IconBase name="trash" :size="14" /> Удалить
-        </button>
+        <div class="modal-actions-left">
+          <button
+            v-if="tool.canManage"
+            type="button"
+            class="btn btn-danger-ghost"
+            @click="onDelete"
+          >
+            <IconBase name="trash" :size="14" /> Удалить
+          </button>
+          <button
+            v-if="auth.isAdmin"
+            type="button"
+            class="btn btn-ghost"
+            @click="notesOpen = true"
+          >
+            <IconBase name="note" :size="14" /> Заметки
+            <span v-if="tool.notesCount" class="badge badge-info">{{ tool.notesCount }}</span>
+          </button>
+        </div>
         <div class="modal-actions-right">
           <button type="button" class="btn btn-primary" @click="onDownload">
             <IconBase name="download" :size="14" /> Скачать
@@ -138,6 +157,8 @@ function formatDate(value) {
       </div>
     </div>
   </div>
+
+  <ToolNotesModal v-model="notesOpen" :tool="tool" />
 </template>
 
 <style scoped>
@@ -258,6 +279,11 @@ function formatDate(value) {
   margin-top: 20px;
 }
 
+.modal-actions-left {
+  display: flex;
+  gap: 10px;
+}
+
 .modal-actions-right {
   display: flex;
   gap: 10px;
@@ -267,6 +293,8 @@ function formatDate(value) {
 @media (max-width: 480px) {
   .detail-grid { grid-template-columns: 1fr; }
   .modal-actions { flex-wrap: wrap; }
+  .modal-actions-left { width: 100%; }
+  .modal-actions-left .btn { flex: 1; }
   .modal-actions-right { margin-left: 0; width: 100%; }
   .modal-actions-right .btn { flex: 1; }
 }

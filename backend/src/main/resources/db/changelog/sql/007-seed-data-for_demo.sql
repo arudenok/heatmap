@@ -4,21 +4,21 @@
 --comment: демо-пользователи. Логин Сигма состоит только из цифр. Пароли см. в README (admin123 / user123).
 --comment: Весь этот файл - демонстрационные данные (не схема), помечены context:for_demo, чтобы их можно
 --comment: было легко исключить (spring.liquibase.contexts=!for_demo) при развёртывании на реальных данных.
-INSERT INTO app_user (username, email, password_hash, full_name, role, enabled)
-VALUES ('admin', '1000', '$2b$10$g5SS9yMyIPS6niJLZ.PRcOQMK0MtGyFUiB20BSY9n3tav7AOmt1uS', 'Администратор реестра', 'ADMIN', TRUE);
+INSERT INTO app_user (username, password_hash, full_name, role, enabled)
+VALUES ('1000', '$2b$10$g5SS9yMyIPS6niJLZ.PRcOQMK0MtGyFUiB20BSY9n3tav7AOmt1uS', 'Администратор реестра', 'ADMIN', TRUE);
 
-INSERT INTO app_user (username, email, password_hash, full_name, role, enabled)
-VALUES ('ivanov', '1001', '$2b$10$3jKB.7hLGjbwx50ShP3WAuMzhKKUyFJhz1iR.Eq6HGj3meQz0DH72', 'Иванов И.И.', 'USER', TRUE);
+INSERT INTO app_user (username, password_hash, full_name, role, enabled)
+VALUES ('1001', '$2b$10$3jKB.7hLGjbwx50ShP3WAuMzhKKUyFJhz1iR.Eq6HGj3meQz0DH72', 'Иванов И.И.', 'USER', TRUE);
 
 --changeset heatmap:007-seed-tools context:for_demo
 --comment: демонстрационные записи реестра инструментов
 INSERT INTO ai_tool (name, description, stage, status, framework, source_label, owner_name, downloads, dau, efficiency_pct, created_by)
 VALUES
-    ('AutoTest-GPT', 'Генерация тест-кейсов на основе спецификаций', 'ACCESS', 'PUBLISHED', 'Openspec', 'https://github.com/heatmap-tools/autotest-gpt', 'Иванов И.И.', 124, NULL, 92, (SELECT id FROM app_user WHERE username = 'ivanov')),
+    ('AutoTest-GPT', 'Генерация тест-кейсов на основе спецификаций', 'ACCESS', 'PUBLISHED', 'Openspec', 'https://github.com/heatmap-tools/autotest-gpt', 'Иванов И.И.', 124, NULL, 92, (SELECT id FROM app_user WHERE username = '1001')),
     ('CodeReview-Agent', 'Автоматический ревью кода с рекомендациями', 'USAGE', 'PUBLISHED', 'Superpowers', 'https://github.com/heatmap-tools/codereview-agent', 'Петрова А.С.', 89, NULL, 87, NULL),
     ('DocAssist', 'Генерация технической документации по коду', 'HABIT', 'PUBLISHED', 'SDD не применим', 'https://github.com/heatmap-tools/docassist', 'Смирнов Д.К.', 1200, 1200, 94, NULL),
     ('TestPilot-AI', 'Автономное тестирование с AI-агентами', 'STANDARD', 'PUBLISHED', 'Openspec', 'https://github.com/heatmap-tools/testpilot-ai', 'Козлов М.А.', 3400, NULL, 98, NULL),
-    ('SpecWriter', 'Черновики спецификаций из пользовательских историй', 'ACCESS', 'PENDING', 'Openspec', 'https://github.com/heatmap-tools/specwriter', 'Иванов И.И.', 12, NULL, 71, (SELECT id FROM app_user WHERE username = 'ivanov')),
+    ('SpecWriter', 'Черновики спецификаций из пользовательских историй', 'ACCESS', 'PENDING', 'Openspec', 'https://github.com/heatmap-tools/specwriter', 'Иванов И.И.', 12, NULL, 71, (SELECT id FROM app_user WHERE username = '1001')),
     ('RefactorBot', 'Подсказки по рефакторингу legacy-кода', 'USAGE', 'PUBLISHED', 'Superpowers', 'https://github.com/heatmap-tools/refactorbot', 'Кузнецова О.В.', 64, NULL, 81, NULL),
     ('DataLens-AI', 'Автоматическая разметка и профилирование датасетов', 'HABIT', 'PUBLISHED', 'SDD не применим', 'https://github.com/heatmap-tools/datalens-ai', 'Волков П.Н.', 940, 610, 88, NULL),
     ('SecScan-Agent', 'Сканирование уязвимостей в пул-реквестах', 'STANDARD', 'PUBLISHED', 'Openspec', 'https://github.com/heatmap-tools/secscan-agent', 'Смирнов Д.К.', 2100, NULL, 95, NULL),

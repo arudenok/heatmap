@@ -1,9 +1,12 @@
 <script setup>
 import { reactive, ref, watch, computed } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
+import { useAuthStore } from '../stores/auth'
 import IconBase from './IconBase.vue'
 import MultiSelectDropdown from './MultiSelectDropdown.vue'
 import ComboboxInput from './ComboboxInput.vue'
+
+const auth = useAuthStore()
 
 const props = defineProps({
   filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], segments: [] }) },
@@ -16,6 +19,16 @@ const open = defineModel({ default: false })
 const emit = defineEmits(['created', 'updated'])
 
 const isEditMode = computed(() => !!props.editTool)
+// Своя заявка на модерации редактируется иначе, чем уже опубликованный/отклонённый инструмент -
+// правки последнего от имени автора (не администратора) отправляют его на повторную модерацию,
+// поэтому тексты подписей отличаются.
+const isPendingEdit = computed(() => isEditMode.value && props.editTool?.status === 'PENDING')
+const isResubmitEdit = computed(
+  () =>
+    isEditMode.value &&
+    !auth.isAdmin &&
+    (props.editTool?.status === 'PUBLISHED' || props.editTool?.status === 'REJECTED')
+)
 
 const form = reactive({
   name: '',
@@ -139,12 +152,22 @@ async function onSubmit() {
       <div class="modal-header">
         <h3>
           <IconBase :name="isEditMode ? 'edit' : 'plus'" :size="17" />
-          {{ isEditMode ? 'Редактировать заявку' : 'Добавить инструмент' }}
+          {{
+            isEditMode
+              ? isPendingEdit
+                ? 'Редактировать заявку'
+                : isResubmitEdit
+                ? 'Редактировать и отправить на модерацию'
+                : 'Редактировать инструмент'
+              : 'Добавить инструмент'
+          }}
         </h3>
         <button class="icon-btn" type="button" @click="close"><IconBase name="x" :size="16" /></button>
       </div>
 
-      <p v-if="isEditMode" class="modal-hint">Изменения сохранятся в заявке, которая всё ещё находится на модерации.</p>
+      <p v-if="isPendingEdit" class="modal-hint">Изменения сохранятся в заявке, которая всё ещё находится на модерации.</p>
+      <p v-else-if="isResubmitEdit" class="modal-hint">Изменения отправят инструмент на повторную модерацию.</p>
+      <p v-else-if="isEditMode" class="modal-hint">Изменения будут сохранены сразу, без повторной модерации.</p>
       <p v-else class="modal-hint">Заявка попадёт на этап <strong>Access</strong> и будет опубликована после проверки администратором.</p>
 
       <form class="modal-form" @submit.prevent="onSubmit">
@@ -230,7 +253,13 @@ async function onSubmit() {
 
         <div class="modal-actions">
           <button type="submit" class="btn btn-primary" :disabled="loading">
-            {{ isEditMode ? (loading ? 'Сохраняем…' : 'Сохранить изменения') : (loading ? 'Отправляем…' : 'Отправить на модерацию') }}
+            {{
+              isEditMode
+                ? isResubmitEdit
+                  ? (loading ? 'Отправляем…' : 'Сохранить и отправить на модерацию')
+                  : (loading ? 'Сохраняем…' : 'Сохранить изменения')
+                : (loading ? 'Отправляем…' : 'Отправить на модерацию')
+            }}
           </button>
         </div>
       </form>

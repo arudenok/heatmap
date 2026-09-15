@@ -5,13 +5,9 @@ import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 
 data class RegisterRequest(
-    @field:NotBlank(message = "Введите имя пользователя")
-    @field:Size(min = 3, max = 64, message = "Имя пользователя: от 3 до 64 символов")
-    val username: String,
-
     @field:NotBlank(message = "Введите логин Сигма")
     @field:Pattern(regexp = "^[0-9]+$", message = "Логин Сигма должен содержать только цифры")
-    val email: String,
+    val username: String,
 
     @field:NotBlank(message = "Введите пароль")
     @field:Size(min = 6, max = 128, message = "Пароль должен быть не короче 6 символов")
@@ -23,8 +19,8 @@ data class RegisterRequest(
 )
 
 data class LoginRequest(
-    @field:NotBlank(message = "Введите имя пользователя или логин Сигма")
-    val usernameOrEmail: String,
+    @field:NotBlank(message = "Введите логин Сигма")
+    val username: String,
 
     @field:NotBlank(message = "Введите пароль")
     val password: String
@@ -38,7 +34,6 @@ data class AuthResponse(
 data class MeResponse(
     val id: Long,
     val username: String,
-    val email: String,
     val fullName: String,
     val role: String
 )
@@ -49,7 +44,7 @@ data class UpdateProfileRequest(
 
     @field:Pattern(regexp = "^[0-9]+$", message = "Логин Сигма должен содержать только цифры")
     @field:Size(max = 255)
-    val email: String? = null,
+    val username: String? = null,
 
     val currentPassword: String? = null,
 

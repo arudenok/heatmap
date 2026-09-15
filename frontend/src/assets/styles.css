@@ -257,6 +257,14 @@ textarea.input {
   color: var(--text-primary);
 }
 
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
 .btn-danger-ghost {
   background: transparent;
   border-color: var(--danger-soft);
@@ -288,6 +296,14 @@ textarea.input {
   border: 1px solid var(--border);
   background: var(--surface-muted);
   color: var(--text-secondary);
+}
+
+/* Бейдж внутри кнопки (например счётчик заметок на кнопке "Заметки") печатается с меньшим
+   вертикальным паддингом, чем обычный самостоятельный бейдж - иначе его строка (padding 3px +
+   line-height) оказывается выше строки текста кнопки, и кнопка с бейджем визуально "растёт"
+   относительно соседних кнопок без бейджа в одном ряду. */
+.btn .badge {
+  padding: 1px 8px;
 }
 
 .badge-info { background: var(--info-soft); color: var(--info); border-color: transparent; }

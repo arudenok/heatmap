@@ -2,11 +2,27 @@
 import { onMounted, ref } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
 import IconBase from './IconBase.vue'
+import ToolNotesModal from './ToolNotesModal.vue'
+
+const emit = defineEmits(['changed'])
 
 const pending = ref([])
 const loading = ref(true)
 const error = ref('')
 const busyId = ref(null)
+// id заявки, для которой сейчас открыта форма ввода причины отклонения (null - ни для одной).
+const rejectingId = ref(null)
+const reasonText = ref('')
+const reasonError = ref('')
+
+// Заметки администраторов - отдельная модалка, открывается для конкретной заявки.
+const notesOpen = ref(false)
+const notesTool = ref(null)
+
+function openNotes(tool) {
+  notesTool.value = tool
+  notesOpen.value = true
+}
 
 async function load() {
   loading.value = true
@@ -19,13 +35,49 @@ async function load() {
   } finally {
     loading.value = false
   }
+  // Сообщаем наверх (счётчик на вкладке "Модерация" в AdminView) актуальное количество.
+  emit('changed', pending.value.length)
 }
 
-async function decide(tool, action) {
+async function approve(tool) {
   busyId.value = tool.id
   try {
-    await api.post(`/admin/tools/${tool.id}/${action}`)
+    await api.post(`/admin/tools/${tool.id}/approve`)
     pending.value = pending.value.filter((t) => t.id !== tool.id)
+    emit('changed', pending.value.length)
+  } catch (e) {
+    error.value = extractErrorMessage(e, 'Не удалось обработать заявку')
+  } finally {
+    busyId.value = null
+  }
+}
+
+// Отклонение требует причины - вместо мгновенного вызова API сначала раскрываем
+// текстовое поле под заявкой, чтобы администратор мог её ввести.
+function startReject(tool) {
+  rejectingId.value = tool.id
+  reasonText.value = ''
+  reasonError.value = ''
+}
+
+function cancelReject() {
+  rejectingId.value = null
+  reasonText.value = ''
+  reasonError.value = ''
+}
+
+async function confirmReject(tool) {
+  const reason = reasonText.value.trim()
+  if (!reason) {
+    reasonError.value = 'Укажите причину отклонения'
+    return
+  }
+  busyId.value = tool.id
+  try {
+    await api.post(`/admin/tools/${tool.id}/reject`, { reason })
+    pending.value = pending.value.filter((t) => t.id !== tool.id)
+    emit('changed', pending.value.length)
+    rejectingId.value = null
   } catch (e) {
     error.value = extractErrorMessage(e, 'Не удалось обработать заявку')
   } finally {
@@ -64,12 +116,16 @@ defineExpose({ refresh: load })
             <span class="tag">👤 {{ tool.ownerName }}</span>
           </div>
         </div>
-        <div class="moderation-actions">
+        <div v-if="rejectingId !== tool.id" class="moderation-actions">
+          <button class="btn btn-ghost btn-sm notes-action-btn" type="button" @click="openNotes(tool)">
+            <IconBase name="note" :size="13" /> Заметки
+            <span v-if="tool.notesCount" class="badge badge-info">{{ tool.notesCount }}</span>
+          </button>
           <button
             class="btn btn-outline btn-sm"
             type="button"
             :disabled="busyId === tool.id"
-            @click="decide(tool, 'reject')"
+            @click="startReject(tool)"
           >
             Отклонить
           </button>
@@ -77,13 +133,38 @@ defineExpose({ refresh: load })
             class="btn btn-primary btn-sm"
             type="button"
             :disabled="busyId === tool.id"
-            @click="decide(tool, 'approve')"
+            @click="approve(tool)"
           >
             Одобрить
           </button>
         </div>
+        <div v-else class="reject-form">
+          <textarea
+            v-model="reasonText"
+            class="input reject-textarea"
+            rows="2"
+            placeholder="Причина отклонения - её увидит автор заявки"
+            @input="reasonError = ''"
+          ></textarea>
+          <p v-if="reasonError" class="error-text">{{ reasonError }}</p>
+          <div class="reject-form-actions">
+            <button class="btn btn-ghost btn-sm" type="button" :disabled="busyId === tool.id" @click="cancelReject">
+              Отмена
+            </button>
+            <button
+              class="btn btn-danger btn-sm"
+              type="button"
+              :disabled="busyId === tool.id"
+              @click="confirmReject(tool)"
+            >
+              Подтвердить отклонение
+            </button>
+          </div>
+        </div>
       </div>
     </div>
+
+    <ToolNotesModal v-model="notesOpen" :tool="notesTool" />
   </div>
 </template>
 
@@ -146,6 +227,32 @@ defineExpose({ refresh: load })
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* Ширина кнопки "Заметки" менялась в зависимости от наличия бейджа-счётчика, а блок
+   кнопок прижат к правому краю строки - из-за этого "Отклонить"/"Одобрить" сдвигались
+   влево-вправо от строки к строке. Фиксируем минимальную ширину под самый широкий
+   вариант (с бейджем). */
+.notes-action-btn {
+  min-width: 148px;
+}
+
+.reject-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-basis: 100%;
+}
+
+.reject-textarea {
+  resize: vertical;
+  min-height: 44px;
+}
+
+.reject-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .empty-state {

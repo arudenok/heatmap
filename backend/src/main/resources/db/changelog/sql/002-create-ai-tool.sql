@@ -25,6 +25,7 @@ CREATE TABLE ai_tool
     created_by     BIGINT,
     created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rejection_reason VARCHAR(1000),
     CONSTRAINT fk_ai_tool_created_by FOREIGN KEY (created_by) REFERENCES app_user (id) ON DELETE SET NULL,
     CONSTRAINT ck_ai_tool_stage CHECK (stage IN ('ACCESS', 'USAGE', 'HABIT', 'STANDARD')),
     CONSTRAINT ck_ai_tool_status CHECK (status IN ('PENDING', 'PUBLISHED', 'REJECTED')),

@@ -11,17 +11,33 @@ const router = useRouter()
 const form = ref({
   fullName: '',
   username: '',
-  email: '',
-  password: ''
+  password: '',
+  confirmPassword: ''
 })
 const loading = ref(false)
 const error = ref('')
 
+function validate() {
+  if (form.value.password.length < 6) {
+    error.value = 'Пароль должен быть не короче 6 символов'
+    return false
+  }
+  if (form.value.password !== form.value.confirmPassword) {
+    error.value = 'Пароль и подтверждение не совпадают'
+    return false
+  }
+  return true
+}
+
 async function onSubmit() {
   error.value = ''
+  if (!validate()) return
+
   loading.value = true
   try {
-    await auth.register({ ...form.value })
+    // confirmPassword нужен только для проверки на клиенте - бэкенду не передаём.
+    const { confirmPassword, ...payload } = form.value
+    await auth.register(payload)
     router.replace({ name: 'dashboard' })
   } catch (e) {
     error.value = extractErrorMessage(e, 'Не удалось зарегистрироваться')
@@ -51,14 +67,10 @@ async function onSubmit() {
           <input id="fullName" v-model="form.fullName" class="input" type="text" required />
         </div>
         <div class="field">
-          <label for="username">Имя пользователя</label>
-          <input id="username" v-model="form.username" class="input" type="text" minlength="3" required />
-        </div>
-        <div class="field">
-          <label for="email">Логин Сигма</label>
+          <label for="username">Логин Сигма</label>
           <input
-            id="email"
-            v-model="form.email"
+            id="username"
+            v-model="form.username"
             class="input"
             type="text"
             inputmode="numeric"
@@ -70,7 +82,27 @@ async function onSubmit() {
         </div>
         <div class="field">
           <label for="password">Пароль</label>
-          <input id="password" v-model="form.password" class="input" type="password" minlength="6" required />
+          <input
+            id="password"
+            v-model="form.password"
+            class="input"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            required
+          />
+        </div>
+        <div class="field">
+          <label for="confirmPassword">Повторите пароль</label>
+          <input
+            id="confirmPassword"
+            v-model="form.confirmPassword"
+            class="input"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            required
+          />
         </div>
 
         <p v-if="error" class="error-text">{{ error }}</p>

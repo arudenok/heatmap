@@ -3,16 +3,21 @@ import IconBase from './IconBase.vue'
 
 const props = defineProps({
   stats: { type: Object, default: null },
+  counts: { type: Object, default: null },
   loading: { type: Boolean, default: false }
 })
 
 // Карточки одновременно служат навигацией по вкладкам реестра - отдельная строка вкладок больше не нужна.
+// Данные по этапам зрелости (top/access/usage/habit/standard) приходят из /tools/counts,
+// а среднее по эффективности и прирост за неделю - из /tools/stats.
 const cards = [
-  { key: 'totalTools', icon: 'layers', label: 'Всего инструментов', tone: 'info', sub: (s) => `+${s.newThisWeek} за неделю`, tab: 'ALL' },
-  { key: 'accessCount', icon: 'spark', label: 'Access · новинки', tone: 'accent', sub: () => 'апробация', tab: 'ACCESS' },
-  { key: 'usageCount', icon: 'trend', label: 'Usage · адаптированы', tone: 'success', sub: () => 'активно используются', tab: 'USAGE' },
-  { key: 'standardCount', icon: 'star', label: 'Process Standard', tone: 'warn', sub: () => 'эталонные решения', tab: 'STANDARD' },
-  { key: 'avgEfficiency', icon: 'gauge', label: 'Средняя эффективность', tone: 'danger', sub: () => 'по всем инструментам', suffix: '%', tab: null }
+  { key: 'total', icon: 'layers', label: 'Всего инструментов', tone: 'info', value: (s, c) => c?.total, sub: (s) => `+${s?.newThisWeek ?? 0} за неделю`, tab: 'ALL' },
+  { key: 'top', icon: 'trophy', label: 'Топ решений банка', tone: 'gold', value: (s, c) => c?.top, sub: () => 'проверенные фавориты', tab: 'TOP' },
+  { key: 'access', icon: 'spark', label: 'Access · новинки', tone: 'accent', value: (s, c) => c?.access, sub: () => 'апробация', tab: 'ACCESS' },
+  { key: 'usage', icon: 'trend', label: 'Usage · адаптированы', tone: 'success', value: (s, c) => c?.usage, sub: () => 'активно используются', tab: 'USAGE' },
+  { key: 'habit', icon: 'flame', label: 'Habit', tone: 'fire', value: (s, c) => c?.habit, sub: () => 'вошли в привычку', tab: 'HABIT' },
+  { key: 'standard', icon: 'star', label: 'Process Standard', tone: 'warn', value: (s, c) => c?.standard, sub: () => 'эталонные решения', tab: 'STANDARD' },
+  { key: 'avgEfficiency', icon: 'gauge', label: 'Средняя эффективность', tone: 'danger', value: (s) => s?.avgEfficiency, sub: () => 'по всем инструментам', suffix: '%', tab: null }
 ]
 
 const activeTab = defineModel({ default: 'ALL' })
@@ -31,12 +36,12 @@ function onCardClick(card) {
       :class="[`tone-${card.tone}`, { clickable: card.tab, active: card.tab && card.tab === activeTab }]"
       @click="onCardClick(card)"
     >
-      <div class="stat-icon"><IconBase :name="card.icon" :size="17" /></div>
+      <div class="stat-icon"><IconBase :name="card.icon" :size="14" /></div>
       <div class="stat-label">{{ card.label }}</div>
-      <div v-if="loading || !stats" class="skeleton" style="height: 30px; width: 60%; margin-top: 6px;"></div>
+      <div v-if="loading || !stats || !counts" class="skeleton" style="height: 30px; width: 60%; margin-top: 6px;"></div>
       <template v-else>
-        <div class="stat-value">{{ stats[card.key] }}{{ card.suffix || '' }}</div>
-        <div class="stat-sub">{{ card.sub(stats) }}</div>
+        <div class="stat-value">{{ card.value(stats, counts) }}{{ card.suffix || '' }}</div>
+        <div class="stat-sub">{{ card.sub(stats, counts) }}</div>
       </template>
     </div>
   </div>
@@ -45,13 +50,13 @@ function onCardClick(card) {
 <style scoped>
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
   margin-bottom: 24px;
 }
 
 .stat-card {
-  padding: 16px 18px;
+  padding: 12px 13px;
   position: relative;
   transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
 }
@@ -70,13 +75,13 @@ function onCardClick(card) {
 }
 
 .stat-icon {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: 7px;
 }
 
 .tone-info .stat-icon { background: var(--info-soft); color: var(--info); }
@@ -84,33 +89,36 @@ function onCardClick(card) {
 .tone-success .stat-icon { background: #e4f6ea; color: #1e8a4c; }
 .tone-warn .stat-icon { background: var(--warn-soft); color: var(--warn); }
 .tone-danger .stat-icon { background: var(--danger-soft); color: var(--danger); }
+.tone-gold .stat-icon { background: #fdf1d6; color: #92700c; }
+.tone-fire .stat-icon { background: #fde3d3; color: #c2530f; }
 
 .stat-label {
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--text-secondary);
+  line-height: 1.25;
 }
 
 .stat-value {
-  font-size: 26px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--text-primary);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .stat-sub {
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
-@media (max-width: 1024px) {
-  .stats-grid { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1200px) {
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
 }
 @media (max-width: 720px) {
-  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .stats-grid { grid-template-columns: repeat(3, 1fr); }
 }
-@media (max-width: 460px) {
-  .stats-grid { grid-template-columns: 1fr; }
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: 1fr 1fr; }
 }
 </style>

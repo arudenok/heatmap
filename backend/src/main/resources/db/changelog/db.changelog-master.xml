@@ -21,5 +21,7 @@
     <include file="db/changelog/sql/005-create-tool-rating.sql" relativeToChangelogFile="false"/>
     <include file="db/changelog/sql/006-create-tool-download.sql" relativeToChangelogFile="false"/>
     <include file="db/changelog/sql/007-seed-data-for_demo.sql" relativeToChangelogFile="false"/>
+    <include file="db/changelog/sql/008-create-notification.sql" relativeToChangelogFile="false"/>
+    <include file="db/changelog/sql/009-create-tool-note.sql" relativeToChangelogFile="false"/>
 
 </databaseChangeLog>

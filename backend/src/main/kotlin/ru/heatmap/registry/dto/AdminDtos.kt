@@ -6,7 +6,6 @@ import java.time.Instant
 data class UserResponse(
     val id: Long,
     val username: String,
-    val email: String,
     val fullName: String,
     val role: String,
     val enabled: Boolean,

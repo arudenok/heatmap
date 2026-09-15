@@ -26,18 +26,17 @@ class AuthService(
     private val authenticationManager: AuthenticationManager
 ) {
 
+    // Логин Сигма - это и есть логин пользователя, отдельного поля под него не заводим:
+    // он хранится прямо в username (единственный идентификатор, нужен и Spring Security).
     @Transactional
     fun register(request: RegisterRequest): AuthResponse {
-        if (appUserRepository.existsByUsernameIgnoreCase(request.username)) {
-            throw ConflictException("Пользователь с таким именем уже существует")
-        }
-        if (appUserRepository.existsByEmailIgnoreCase(request.email)) {
+        val sigmaLogin = request.username.trim()
+        if (appUserRepository.existsByUsernameIgnoreCase(sigmaLogin)) {
             throw ConflictException("Пользователь с таким логином Сигма уже зарегистрирован")
         }
 
         val user = AppUser(
-            username = request.username.trim(),
-            email = request.email.trim(),
+            username = sigmaLogin,
             passwordHash = passwordEncoder.encode(request.password),
             fullName = request.fullName.trim(),
             role = Role.USER
@@ -50,7 +49,7 @@ class AuthService(
     fun login(request: LoginRequest): AuthResponse {
         val authentication = try {
             authenticationManager.authenticate(
-                UsernamePasswordAuthenticationToken(request.usernameOrEmail.trim(), request.password)
+                UsernamePasswordAuthenticationToken(request.username.trim(), request.password)
             )
         } catch (ex: AuthenticationException) {
             throw UnauthorizedException("Неверное имя пользователя или пароль, либо учётная запись заблокирована")
@@ -69,9 +68,13 @@ class AuthService(
         return user.toMeResponse()
     }
 
-    /** Пользователь редактирует собственный профиль: ФИО, логин Сигма и, опционально, пароль. */
+    /**
+     * Пользователь редактирует собственный профиль: ФИО, логин Сигма (=username) и, опционально, пароль.
+     * Возвращаем свежий токен вместе с профилем: если логин Сигма поменялся, старый токен (в нём "зашит"
+     * прежний username) перестанет проходить аутентификацию - фронтенд должен сразу же сохранить новый.
+     */
     @Transactional
-    fun updateProfile(principal: UserPrincipal, request: UpdateProfileRequest): MeResponse {
+    fun updateProfile(principal: UserPrincipal, request: UpdateProfileRequest): AuthResponse {
         val user = appUserRepository.findByIdOrNull(principal.id)
             ?: throw NotFoundException("Пользователь не найден")
 
@@ -81,15 +84,15 @@ class AuthService(
             user.fullName = trimmed
         }
 
-        request.email?.let {
+        request.username?.let {
             val normalized = it.trim()
             if (normalized.isBlank()) throw BadRequestException("Логин Сигма не может быть пустым")
-            if (!normalized.equals(user.email, ignoreCase = true) &&
-                appUserRepository.existsByEmailIgnoreCase(normalized)
+            if (!normalized.equals(user.username, ignoreCase = true) &&
+                appUserRepository.existsByUsernameIgnoreCase(normalized)
             ) {
                 throw ConflictException("Этот логин Сигма уже используется другим пользователем")
             }
-            user.email = normalized
+            user.username = normalized
         }
 
         if (!request.newPassword.isNullOrBlank()) {
@@ -101,17 +104,15 @@ class AuthService(
             user.passwordHash = passwordEncoder.encode(request.newPassword)
         }
 
-        return appUserRepository.save(user).toMeResponse()
+        val saved = appUserRepository.save(user)
+        val token = jwtService.generateToken(saved.username, saved.role.name, saved.id!!)
+        return AuthResponse(token, saved.toMeResponse())
     }
 }
 
-// Логин в Spring Security по умолчанию ищет пользователя через UserDetailsService по "username",
-// поэтому вход по логину Сигма поддержан отдельно на уровне AppUserDetailsService не требуется:
-// достаточно, что username совпадает с логином, введённым пользователем (см. LoginRequest).
 fun AppUser.toMeResponse() = MeResponse(
     id = this.id!!,
     username = this.username,
-    email = this.email,
     fullName = this.fullName,
     role = this.role.name
 )

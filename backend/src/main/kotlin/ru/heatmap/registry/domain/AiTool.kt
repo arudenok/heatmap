@@ -66,6 +66,11 @@ class AiTool(
     @Column(name = "ratings_count", nullable = false)
     var ratingsCount: Int = 0,
 
+    // Причина отклонения - заполняется администратором при отклонении заявки,
+    // показывается автору, сбрасывается при одобрении и при новой отправке на модерацию.
+    @Column(name = "rejection_reason", length = 1000)
+    var rejectionReason: String? = null,
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     var createdBy: AppUser? = null,

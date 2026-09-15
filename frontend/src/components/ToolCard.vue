@@ -1,5 +1,8 @@
 <script setup>
+import { ref } from 'vue'
 import IconBase from './IconBase.vue'
+import ToolNotesModal from './ToolNotesModal.vue'
+import { useAuthStore } from '../stores/auth'
 
 const props = defineProps({
   tool: { type: Object, required: true },
@@ -7,6 +10,12 @@ const props = defineProps({
 })
 
 defineEmits(['view'])
+
+const auth = useAuthStore()
+
+// Заметки администраторов прямо с карточки на главной - открываются поверх карточки,
+// без перехода в модалку "Подробнее" (см. чип-счётчик заметок ниже с @click.stop).
+const notesOpen = ref(false)
 
 const stageMeta = {
   ACCESS: { label: 'Access', class: 'stage-access' },
@@ -65,6 +74,15 @@ function formatCompact(n) {
         <span v-if="tool.ratingsCount" class="rating-chip" title="Оценка пользователей">
           <IconBase name="star" :size="13" /> {{ tool.avgRating.toFixed(1) }}
         </span>
+        <span
+          v-if="auth.isAdmin"
+          class="notes-chip"
+          :class="{ 'notes-chip-active': tool.notesCount }"
+          title="Заметки администраторов"
+          @click.stop="notesOpen = true"
+        >
+          <IconBase name="note" :size="13" /> {{ tool.notesCount || 0 }}
+        </span>
       </div>
     </div>
 
@@ -82,6 +100,10 @@ function formatCompact(n) {
       </span>
     </div>
   </div>
+
+  <!-- Вынесена за пределы .tool-card: иначе клики внутри модалки (поле ввода, кнопки
+       заметок) всплывали бы до обработчика @click карточки и заодно открывали "Подробнее". -->
+  <ToolNotesModal v-model="notesOpen" :tool="tool" />
 </template>
 
 <style scoped>
@@ -152,6 +174,22 @@ function formatCompact(n) {
 }
 .rating-chip {
   color: var(--warn, #d69b1a);
+  font-weight: 600;
+}
+
+.notes-chip {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  margin: -2px -6px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.notes-chip:hover {
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+.notes-chip-active {
+  color: var(--info);
   font-weight: 600;
 }
 

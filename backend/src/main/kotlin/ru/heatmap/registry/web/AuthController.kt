@@ -30,5 +30,5 @@ class AuthController(private val authService: AuthService) {
     fun updateMe(
         @Valid @RequestBody request: UpdateProfileRequest,
         @AuthenticationPrincipal principal: UserPrincipal
-    ): MeResponse = authService.updateProfile(principal, request)
+    ): AuthResponse = authService.updateProfile(principal, request)
 }

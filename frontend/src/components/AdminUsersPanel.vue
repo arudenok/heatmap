@@ -45,18 +45,6 @@ async function toggleRole(user) {
   }
 }
 
-async function toggleEnabled(user) {
-  busyId.value = user.id
-  try {
-    const { data } = await api.patch(`/admin/users/${user.id}/enabled`, { enabled: !user.enabled })
-    Object.assign(user, data)
-  } catch (e) {
-    error.value = extractErrorMessage(e, 'Не удалось изменить статус пользователя')
-  } finally {
-    busyId.value = null
-  }
-}
-
 async function deleteUser(user) {
   if (!confirm(`Удалить пользователя «${user.fullName}» (@${user.username})? Это действие необратимо.`)) return
   busyId.value = user.id
@@ -85,7 +73,7 @@ onMounted(load)
       <input
         v-model="search"
         type="text"
-        placeholder="Поиск по имени, логину или логину Сигма..."
+        placeholder="Поиск по имени или логину Сигма..."
         class="users-search-input"
       />
     </div>
@@ -100,7 +88,6 @@ onMounted(load)
       <thead>
         <tr>
           <th>Пользователь</th>
-          <th>Логин Сигма</th>
           <th>Роль</th>
           <th>Статус</th>
           <th></th>
@@ -110,9 +97,8 @@ onMounted(load)
         <tr v-for="user in users" :key="user.id">
           <td>
             <div class="user-cell-name">{{ user.fullName }}</div>
-            <div class="user-cell-username">@{{ user.username }}</div>
+            <div class="user-cell-username">Логин Сигма: {{ user.username }}</div>
           </td>
-          <td>{{ user.email }}</td>
           <td>
             <span class="badge" :class="user.role === 'ADMIN' ? 'badge-accent' : 'badge-info'">{{ user.role }}</span>
           </td>
@@ -121,31 +107,25 @@ onMounted(load)
               {{ user.enabled ? 'Активен' : 'Заблокирован' }}
             </span>
           </td>
-          <td class="user-actions">
-            <button
-              class="btn btn-ghost btn-sm"
-              type="button"
-              :disabled="busyId === user.id || user.id === auth.user?.id"
-              @click="toggleRole(user)"
-            >
-              {{ user.role === 'ADMIN' ? 'Сделать пользователем' : 'Сделать админом' }}
-            </button>
-            <button
-              class="btn btn-ghost btn-sm"
-              type="button"
-              :disabled="busyId === user.id || user.id === auth.user?.id"
-              @click="toggleEnabled(user)"
-            >
-              {{ user.enabled ? 'Заблокировать' : 'Разблокировать' }}
-            </button>
-            <button
-              class="btn btn-danger-ghost btn-sm"
-              type="button"
-              :disabled="busyId === user.id || user.id === auth.user?.id"
-              @click="deleteUser(user)"
-            >
-              <IconBase name="trash" :size="13" /> Удалить
-            </button>
+          <td class="user-actions-cell">
+            <div class="user-actions">
+              <button
+                class="btn btn-ghost btn-sm role-toggle-btn"
+                type="button"
+                :disabled="busyId === user.id || user.id === auth.user?.id"
+                @click="toggleRole(user)"
+              >
+                {{ user.role === 'ADMIN' ? 'Сделать пользователем' : 'Сделать админом' }}
+              </button>
+              <button
+                class="btn btn-danger-ghost btn-sm"
+                type="button"
+                :disabled="busyId === user.id || user.id === auth.user?.id"
+                @click="deleteUser(user)"
+              >
+                <IconBase name="trash" :size="13" /> Удалить
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -231,10 +211,26 @@ onMounted(load)
   color: var(--text-muted);
 }
 
+/* Последняя колонка таблицы обычно шире своего содержимого (остальные три колонки
+   не занимают всю ширину панели) - без этого кнопки повисали слева, а справа
+   оставалась пустая полоса. */
+.user-actions-cell {
+  text-align: right;
+}
+
 .user-actions {
   display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Текст на кнопке смены роли разной длины ("Сделать пользователем" длиннее, чем
+   "Сделать админом") - фиксируем ширину, чтобы кнопка выглядела одинаково и стояла
+   на одном месте в каждой строке, а не "прыгала" из-за разной ширины текста. */
+.role-toggle-btn {
+  width: 190px;
 }
 
 @media (max-width: 800px) {

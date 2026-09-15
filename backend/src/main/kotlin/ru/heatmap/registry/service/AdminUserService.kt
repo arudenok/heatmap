@@ -4,7 +4,9 @@ import ru.heatmap.registry.domain.AppUser
 import ru.heatmap.registry.domain.Role
 import ru.heatmap.registry.dto.UserResponse
 import ru.heatmap.registry.repository.AppUserRepository
+import ru.heatmap.registry.repository.NotificationRepository
 import ru.heatmap.registry.repository.ToolDownloadRepository
+import ru.heatmap.registry.repository.ToolNoteRepository
 import ru.heatmap.registry.repository.ToolRatingRepository
 import ru.heatmap.registry.web.BadRequestException
 import ru.heatmap.registry.web.ConflictException
@@ -17,10 +19,12 @@ import org.springframework.transaction.annotation.Transactional
 class AdminUserService(
     private val appUserRepository: AppUserRepository,
     private val toolRatingRepository: ToolRatingRepository,
-    private val toolDownloadRepository: ToolDownloadRepository
+    private val toolDownloadRepository: ToolDownloadRepository,
+    private val notificationRepository: NotificationRepository,
+    private val toolNoteRepository: ToolNoteRepository
 ) {
 
-    /** Список пользователей с опциональным поиском по логину, логину Сигма или ФИО. */
+    /** Список пользователей с опциональным поиском по логину Сигма (=username) или ФИО. */
     fun findAll(search: String? = null): List<UserResponse> {
         val all = appUserRepository.findAll()
         val filtered = if (search.isNullOrBlank()) {
@@ -29,7 +33,6 @@ class AdminUserService(
             val query = search.trim().lowercase()
             all.filter { user ->
                 user.username.lowercase().contains(query) ||
-                    user.email.lowercase().contains(query) ||
                     user.fullName.lowercase().contains(query)
             }
         }
@@ -72,13 +75,14 @@ class AdminUserService(
         }
         toolRatingRepository.deleteAllByUserId(userId)
         toolDownloadRepository.deleteAllByUserId(userId)
+        notificationRepository.deleteAllByUserId(userId)
+        toolNoteRepository.deleteAllByAuthorId(userId)
         appUserRepository.delete(user)
     }
 
     private fun AppUser.toResponse() = UserResponse(
         id = this.id!!,
         username = this.username,
-        email = this.email,
         fullName = this.fullName,
         role = this.role.name,
         enabled = this.enabled,

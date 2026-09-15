@@ -11,7 +11,7 @@ const passwordModalOpen = ref(false)
 
 const form = reactive({
   fullName: '',
-  email: ''
+  username: ''
 })
 
 const loading = ref(false)
@@ -21,7 +21,7 @@ const success = ref('')
 watch(open, (value) => {
   if (!value) return
   form.fullName = auth.user?.fullName || ''
-  form.email = auth.user?.email || ''
+  form.username = auth.user?.username || ''
   error.value = ''
   success.value = ''
 })
@@ -41,7 +41,7 @@ async function onSubmit() {
   try {
     await auth.updateProfile({
       fullName: form.fullName.trim(),
-      email: form.email.trim()
+      username: form.username.trim()
     })
     success.value = 'Профиль обновлён'
   } catch (e) {
@@ -67,10 +67,10 @@ async function onSubmit() {
         </div>
 
         <div class="field">
-          <label for="profile-email">Логин Сигма</label>
+          <label for="profile-username">Логин Сигма</label>
           <input
-            id="profile-email"
-            v-model="form.email"
+            id="profile-username"
+            v-model="form.username"
             class="input"
             type="text"
             inputmode="numeric"

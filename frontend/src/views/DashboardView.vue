@@ -114,7 +114,9 @@ async function loadMine() {
   }
   try {
     const { data } = await api.get('/tools/mine')
-    myTools.value = data.filter((t) => t.status !== 'PUBLISHED')
+    // Показываем все свои инструменты, включая опубликованные - их тоже можно
+    // редактировать (правки отправят инструмент на повторную модерацию).
+    myTools.value = data
   } catch {
     myTools.value = []
   }
@@ -129,8 +131,8 @@ function openAddModal() {
   modalOpen.value = true
 }
 
-// Редактировать можно только свою заявку, ещё не прошедшую модерацию -
-// это дублирует проверку на бэкенде (ToolService.update), но не даёт открыть форму заведомо впустую.
+// Редактировать можно свой инструмент в любом статусе - правки опубликованного
+// или отклонённого инструмента отправят его на повторную модерацию (см. ToolService.update).
 function openEditModal(tool) {
   editingTool.value = tool
   modalOpen.value = true
@@ -229,25 +231,28 @@ onMounted(() => {
 
       <p v-if="errorMessage" class="error-text" style="margin-bottom: 16px;">{{ errorMessage }}</p>
 
-      <StatsGrid v-model="activeTab" :stats="stats" :loading="loadingTop" />
+      <StatsGrid v-model="activeTab" :stats="stats" :counts="counts" :loading="loadingTop" />
 
       <div v-if="myTools.length" class="my-requests panel">
-        <div class="my-requests-title"><IconBase name="clock" :size="15" /> Мои заявки на модерации</div>
+        <div class="my-requests-title"><IconBase name="clock" :size="15" /> Мои инструменты</div>
         <div class="my-requests-list">
           <div v-for="t in myTools" :key="t.id" class="my-request-row">
-            <span class="my-request-name">{{ t.name }}</span>
-            <span class="badge" :class="t.status === 'REJECTED' ? 'badge-danger' : 'badge-warn'">
-              {{ t.status === 'REJECTED' ? 'Отклонено' : 'На модерации' }}
-            </span>
-            <button
-              v-if="t.status === 'PENDING'"
-              class="btn btn-ghost btn-sm"
-              type="button"
-              @click="openEditModal(t)"
-            >
-              Редактировать
-            </button>
-            <button class="btn btn-ghost btn-sm" type="button" @click="onDeleteTool(t)">Отозвать</button>
+            <div class="my-request-main">
+              <span class="my-request-name">{{ t.name }}</span>
+              <span
+                class="badge"
+                :class="{ PENDING: 'badge-warn', PUBLISHED: 'badge-accent', REJECTED: 'badge-danger' }[t.status]"
+              >
+                {{ { PENDING: 'На модерации', PUBLISHED: 'Опубликован', REJECTED: 'Отклонено' }[t.status] }}
+              </span>
+            </div>
+            <p v-if="t.status === 'REJECTED' && t.rejectionReason" class="my-request-reason">
+              Причина отклонения: {{ t.rejectionReason }}
+            </p>
+            <div class="my-request-actions">
+              <button class="btn btn-ghost btn-sm" type="button" @click="openEditModal(t)">Редактировать</button>
+              <button class="btn btn-ghost btn-sm" type="button" @click="onDeleteTool(t)">Отозвать</button>
+            </div>
           </div>
         </div>
       </div>
@@ -371,15 +376,36 @@ onMounted(() => {
 
 .my-request-row {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--surface-muted);
+}
+.my-request-row:last-child {
+  border-bottom: none;
+}
+
+.my-request-main {
+  display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 13.5px;
-  padding: 6px 0;
 }
 
 .my-request-name {
   font-weight: 600;
   flex: 1;
+}
+
+.my-request-reason {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.my-request-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .pagination {

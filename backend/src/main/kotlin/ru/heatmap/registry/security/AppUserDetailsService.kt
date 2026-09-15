@@ -9,9 +9,9 @@ import org.springframework.stereotype.Service
 @Service
 class AppUserDetailsService(private val appUserRepository: AppUserRepository) : UserDetailsService {
 
-    override fun loadUserByUsername(usernameOrEmail: String): UserDetails {
-        val user = appUserRepository.findByUsernameIgnoreCaseOrEmailIgnoreCase(usernameOrEmail, usernameOrEmail)
-            ?: throw UsernameNotFoundException("Пользователь не найден: $usernameOrEmail")
+    override fun loadUserByUsername(username: String): UserDetails {
+        val user = appUserRepository.findByUsernameIgnoreCase(username)
+            ?: throw UsernameNotFoundException("Пользователь не найден: $username")
         return UserPrincipal(user)
     }
 }

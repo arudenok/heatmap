@@ -3,10 +3,17 @@ import { ref, watch } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
 import IconBase from './IconBase.vue'
 import ToolDetailModal from './ToolDetailModal.vue'
+import AddToolModal from './AddToolModal.vue'
 
 const open = defineModel({ default: false })
 
-const tools = ref([])
+// Вкладка "Скачанные" - то, что пользователь скачивал (можно оценить).
+// Вкладка "Загруженные" - собственные заявки/инструменты пользователя, любого статуса.
+const activeTab = ref('downloaded')
+const loadedTabs = ref({ downloaded: false, uploaded: false })
+
+const downloadedTools = ref([])
+const uploadedTools = ref([])
 const loading = ref(true)
 const error = ref('')
 const busyId = ref(null)
@@ -15,6 +22,11 @@ const hover = ref({})
 const detailOpen = ref(false)
 const detailTool = ref(null)
 
+// Нужны для формы редактирования собственной заявки (AddToolModal).
+const filterOptions = ref({ roles: [], frameworks: [], segments: [] })
+const editModalOpen = ref(false)
+const editingTool = ref(null)
+
 const stageMeta = {
   ACCESS: { label: 'Access', class: 'stage-access' },
   USAGE: { label: 'Usage', class: 'stage-usage' },
@@ -22,17 +34,55 @@ const stageMeta = {
   STANDARD: { label: 'Process Standard', class: 'stage-standard' }
 }
 
-async function load() {
+const statusMeta = {
+  PENDING: { label: 'На модерации', class: 'badge-warn' },
+  PUBLISHED: { label: 'Опубликован', class: 'badge-info' },
+  REJECTED: { label: 'Отклонено', class: 'badge-danger' }
+}
+
+async function loadDownloaded() {
+  const { data } = await api.get('/tools/downloaded')
+  downloadedTools.value = data
+}
+
+async function loadUploaded() {
+  const { data } = await api.get('/tools/mine')
+  uploadedTools.value = data
+}
+
+async function loadFilterOptions() {
+  try {
+    const { data } = await api.get('/tools/filter-options')
+    filterOptions.value = data
+  } catch {
+    // Список ролей/фреймворков/сегментов не критичен - молча оставляем пустым.
+  }
+}
+
+async function loadTab(tab) {
   loading.value = true
   error.value = ''
   try {
-    const { data } = await api.get('/tools/downloaded')
-    tools.value = data
+    if (tab === 'downloaded') {
+      await loadDownloaded()
+    } else {
+      await loadUploaded()
+    }
+    loadedTabs.value[tab] = true
   } catch (e) {
-    error.value = extractErrorMessage(e, 'Не удалось загрузить скачанные инструменты')
+    error.value = extractErrorMessage(
+      e,
+      tab === 'downloaded' ? 'Не удалось загрузить скачанные инструменты' : 'Не удалось загрузить загруженные инструменты'
+    )
   } finally {
     loading.value = false
   }
+}
+
+function switchTab(tab) {
+  activeTab.value = tab
+  error.value = ''
+  if (!loadedTabs.value[tab]) loadTab(tab)
 }
 
 async function rate(tool, value) {
@@ -66,23 +116,42 @@ async function openDetail(tool) {
   }
 }
 
-// Удаление доступно только если инструмент можно редактировать (свой/админ) -
-// сама кнопка в ToolDetailModal и так скрыта для остальных случаев.
-async function onDeleteFromDetail(tool) {
+// Редактировать из вкладки "Загруженные" можно только заявку, ещё не прошедшую модерацию -
+// это дублирует проверку на бэкенде (ToolService.update), но не даёт открыть форму впустую.
+function openEditModal(tool) {
+  editingTool.value = tool
+  editModalOpen.value = true
+}
+
+async function onToolUpdated() {
+  editingTool.value = null
+  await loadUploaded()
+}
+
+async function deleteTool(tool, { fromDetail = false } = {}) {
   if (!confirm(`Удалить инструмент «${tool.name}»?`)) return
   try {
     await api.delete(`/tools/${tool.id}`)
-    tools.value = tools.value.filter((t) => t.id !== tool.id)
-    detailOpen.value = false
+    downloadedTools.value = downloadedTools.value.filter((t) => t.id !== tool.id)
+    uploadedTools.value = uploadedTools.value.filter((t) => t.id !== tool.id)
+    if (fromDetail) detailOpen.value = false
   } catch (e) {
     error.value = extractErrorMessage(e, 'Не удалось удалить инструмент')
   }
 }
 
-// Загружаем список заново при каждом открытии - это проще, чем прокидывать
-// событие обновления из других частей приложения, а список короткий.
+function onDeleteFromDetail(tool) {
+  deleteTool(tool, { fromDetail: true })
+}
+
+// При каждом открытии модалки перезагружаем всё заново - список короткий,
+// а это проще, чем прокидывать события обновления из других частей приложения.
 watch(open, (value) => {
-  if (value) load()
+  if (!value) return
+  activeTab.value = 'downloaded'
+  loadedTabs.value = { downloaded: false, uploaded: false }
+  loadTab('downloaded')
+  loadFilterOptions()
 })
 </script>
 
@@ -94,43 +163,97 @@ watch(open, (value) => {
         <button class="icon-btn" type="button" @click="close"><IconBase name="x" :size="16" /></button>
       </div>
 
-      <p class="modal-hint">Инструменты, которые вы скачивали. Здесь можно поставить или изменить оценку.</p>
+      <div class="tab-bar">
+        <button
+          type="button"
+          class="tab-btn"
+          :class="{ active: activeTab === 'downloaded' }"
+          @click="switchTab('downloaded')"
+        >
+          Скачанные
+        </button>
+        <button
+          type="button"
+          class="tab-btn"
+          :class="{ active: activeTab === 'uploaded' }"
+          @click="switchTab('uploaded')"
+        >
+          Загруженные
+        </button>
+      </div>
+
+      <p v-if="activeTab === 'downloaded'" class="modal-hint">Инструменты, которые вы скачивали. Здесь можно поставить или изменить оценку.</p>
+      <p v-else class="modal-hint">Инструменты, добавленные вами - включая заявки на модерации и отклонённые.</p>
 
       <div v-if="loading" class="skeleton" style="height: 48px;"></div>
 
       <p v-else-if="error" class="error-text">{{ error }}</p>
 
-      <p v-else-if="!tools.length" class="empty-text">Вы пока ничего не скачивали.</p>
+      <template v-else-if="activeTab === 'downloaded'">
+        <p v-if="!downloadedTools.length" class="empty-text">Вы пока ничего не скачивали.</p>
 
-      <div v-else class="my-downloads-list">
-        <div v-for="tool in tools" :key="tool.id" class="my-downloads-row">
-          <button type="button" class="my-downloads-name" @click="openDetail(tool)">
-            {{ tool.name }}
-            <span class="stage-badge" :class="stageMeta[tool.stage]?.class">{{ stageMeta[tool.stage]?.label }}</span>
-          </button>
-          <div class="my-downloads-stars" @mouseleave="hover[tool.id] = 0">
-            <button
-              v-for="n in 5"
-              :key="n"
-              type="button"
-              class="star-btn"
-              :class="{ filled: n <= (hover[tool.id] || tool.myRating || 0) }"
-              :disabled="busyId === tool.id"
-              :title="`Оценить на ${n}`"
-              @mouseenter="hover[tool.id] = n"
-              @click="rate(tool, n)"
-            >
-              <IconBase name="star" :size="16" />
+        <div v-else class="my-downloads-list">
+          <div v-for="tool in downloadedTools" :key="tool.id" class="my-downloads-row">
+            <button type="button" class="my-downloads-name" @click="openDetail(tool)">
+              {{ tool.name }}
+              <span class="stage-badge" :class="stageMeta[tool.stage]?.class">{{ stageMeta[tool.stage]?.label }}</span>
             </button>
-            <span class="my-downloads-rating-note">
-              {{ tool.myRating ? `ваша оценка: ${tool.myRating}` : 'оцените инструмент' }}
-            </span>
+            <div class="my-downloads-stars" @mouseleave="hover[tool.id] = 0">
+              <button
+                v-for="n in 5"
+                :key="n"
+                type="button"
+                class="star-btn"
+                :class="{ filled: n <= (hover[tool.id] || tool.myRating || 0) }"
+                :disabled="busyId === tool.id"
+                :title="`Оценить на ${n}`"
+                @mouseenter="hover[tool.id] = n"
+                @click="rate(tool, n)"
+              >
+                <IconBase name="star" :size="16" />
+              </button>
+              <span class="my-downloads-rating-note">
+                {{ tool.myRating ? `ваша оценка: ${tool.myRating}` : 'оцените инструмент' }}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
+
+      <template v-else>
+        <p v-if="!uploadedTools.length" class="empty-text">Вы пока не добавляли инструменты.</p>
+
+        <div v-else class="my-downloads-list">
+          <div v-for="tool in uploadedTools" :key="tool.id" class="my-downloads-row">
+            <button type="button" class="my-downloads-name" @click="openDetail(tool)">
+              {{ tool.name }}
+              <span class="badge" :class="statusMeta[tool.status]?.class">{{ statusMeta[tool.status]?.label }}</span>
+            </button>
+            <div class="my-uploads-actions">
+              <button
+                v-if="tool.status === 'PENDING'"
+                class="btn btn-ghost btn-sm"
+                type="button"
+                @click="openEditModal(tool)"
+              >
+                <IconBase name="edit" :size="13" /> Редактировать
+              </button>
+              <button class="btn btn-ghost btn-sm" type="button" @click="deleteTool(tool)">
+                <IconBase name="trash" :size="13" /> Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
     <ToolDetailModal v-model="detailOpen" :tool="detailTool" @delete="onDeleteFromDetail" />
+    <AddToolModal
+      v-model="editModalOpen"
+      :filter-options="filterOptions"
+      :edit-tool="editingTool"
+      @updated="onToolUpdated"
+    />
   </div>
 </template>
 
@@ -148,8 +271,8 @@ watch(open, (value) => {
 
 .modal {
   width: 100%;
-  max-width: 480px;
-  max-height: 90vh;
+  max-width: 680px;
+  max-height: 88vh;
   overflow-y: auto;
   padding: 24px 26px;
 }
@@ -182,10 +305,39 @@ watch(open, (value) => {
   color: var(--text-primary);
 }
 
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 4px;
+  padding: 3px;
+  background: var(--surface-muted);
+  border-radius: var(--radius-md);
+  width: fit-content;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+.tab-btn.active {
+  background: var(--surface);
+  color: var(--accent-dark);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.06));
+}
+
 .modal-hint {
   font-size: 13px;
   color: var(--text-secondary);
-  margin: 0 0 16px;
+  margin: 10px 0 16px;
 }
 
 .empty-text {
@@ -277,5 +429,12 @@ watch(open, (value) => {
   color: var(--text-muted);
   margin-left: 8px;
   white-space: nowrap;
+}
+
+.my-uploads-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 </style>

@@ -1,5 +1,6 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
+import api from '../services/api'
 import AppHeader from '../components/AppHeader.vue'
 import AdminModerationPanel from '../components/AdminModerationPanel.vue'
 import AdminToolsPanel from '../components/AdminToolsPanel.vue'
@@ -15,6 +16,40 @@ const sections = [
   { key: 'users', label: 'Пользователи', icon: 'users' },
   { key: 'impact', label: 'Метрики влияния', icon: 'gauge' }
 ]
+
+// Счётчик на вкладке "Модерация" - сколько заявок ждут рассмотрения. Обновляется
+// сам по себе (опрос раз в 20с + сразу после одобрения/отклонения в панели), чтобы
+// админу не приходилось обновлять страницу вручную, увидев уведомление о новой заявке.
+const pendingCount = ref(0)
+const moderationPanelRef = ref(null)
+let pollHandle = null
+
+async function loadPendingCount() {
+  try {
+    const { data } = await api.get('/admin/tools/pending')
+    pendingCount.value = data.length
+  } catch {
+    // счётчик не критичен - молча оставляем прежнее значение
+  }
+  // Пока открыта сама вкладка модерации - заодно обновляем в ней список заявок,
+  // иначе новая заявка появится там только после ручного обновления страницы.
+  if (activeSection.value === 'moderation') {
+    moderationPanelRef.value?.refresh()
+  }
+}
+
+function onModerationChanged(count) {
+  pendingCount.value = count
+}
+
+onMounted(() => {
+  loadPendingCount()
+  pollHandle = setInterval(loadPendingCount, 20000)
+})
+
+onUnmounted(() => {
+  clearInterval(pollHandle)
+})
 </script>
 
 <template>
@@ -39,10 +74,15 @@ const sections = [
           @click="activeSection = section.key"
         >
           <IconBase :name="section.icon" :size="14" /> {{ section.label }}
+          <span v-if="section.key === 'moderation' && pendingCount" class="tab-badge">{{ pendingCount }}</span>
         </button>
       </div>
 
-      <AdminModerationPanel v-if="activeSection === 'moderation'" />
+      <AdminModerationPanel
+        v-if="activeSection === 'moderation'"
+        ref="moderationPanelRef"
+        @changed="onModerationChanged"
+      />
       <AdminToolsPanel v-else-if="activeSection === 'tools'" />
       <AdminUsersPanel v-else-if="activeSection === 'users'" />
       <AdminImpactPanel v-else-if="activeSection === 'impact'" />
@@ -100,5 +140,24 @@ const sections = [
 .admin-tab.active {
   background: var(--accent);
   color: #ffffff;
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger, #d64545);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.admin-tab.active .tab-badge {
+  background: rgba(255, 255, 255, 0.28);
+  color: #fff;
 }
 </style>

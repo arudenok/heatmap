@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import api from '../services/api'
 import IconBase from './IconBase.vue'
 import EditProfileModal from './EditProfileModal.vue'
 import MyDownloadsModal from './MyDownloadsModal.vue'
@@ -17,6 +18,135 @@ const currentTheme = ref(getEffectiveTheme())
 function onToggleTheme() {
   currentTheme.value = toggleTheme()
 }
+
+// ===== Уведомления: админу - о новых заявках, автору - о результате модерации =====
+const notifOpen = ref(false)
+const notifications = ref([])
+const unreadCount = ref(0)
+const notifLoading = ref(false)
+// Непрочитанные и прочитанные - на разных вкладках, чтобы старые не мешали видеть новые.
+const notifTab = ref('unread')
+const unreadNotifs = computed(() => notifications.value.filter((n) => !n.read))
+const readNotifs = computed(() => notifications.value.filter((n) => n.read))
+const displayedNotifs = computed(() => (notifTab.value === 'unread' ? unreadNotifs.value : readNotifs.value))
+let pollHandle = null
+
+const notifMeta = {
+  NEW_SUBMISSION: { icon: 'inbox' },
+  SUBMISSION_APPROVED: { icon: 'check' },
+  SUBMISSION_REJECTED: { icon: 'x' },
+  NEW_TOOL_NOTE: { icon: 'note' }
+}
+
+// Счётчик заявок, ждущих модерации - виден админу рядом со ссылкой "Администрирование"
+// в шапке (а не только внутри самой страницы администрирования), обновляется тем же опросом.
+const pendingModerationCount = ref(0)
+
+async function loadPendingModerationCount() {
+  if (!auth.isAdmin) return
+  try {
+    const { data } = await api.get('/admin/tools/pending')
+    pendingModerationCount.value = data.length
+  } catch {
+    // не критично - молча оставляем прежнее значение
+  }
+}
+
+async function loadUnreadCount() {
+  if (!auth.isAuthenticated) return
+  try {
+    const { data } = await api.get('/notifications/unread-count')
+    unreadCount.value = data.count
+  } catch {
+    // молча - иконка уведомлений не критична для остального функционала
+  }
+}
+
+async function loadNotifications() {
+  notifLoading.value = true
+  try {
+    const { data } = await api.get('/notifications')
+    notifications.value = data
+  } catch {
+    notifications.value = []
+  } finally {
+    notifLoading.value = false
+  }
+}
+
+function toggleNotifications() {
+  notifOpen.value = !notifOpen.value
+  if (notifOpen.value) {
+    notifTab.value = 'unread'
+    loadNotifications()
+  }
+}
+
+async function onNotificationClick(notification) {
+  if (!notification.read) {
+    try {
+      await api.post(`/notifications/${notification.id}/read`)
+      notification.read = true
+      unreadCount.value = Math.max(0, unreadCount.value - 1)
+    } catch {
+      // не критично - просто оставляем непрочитанным
+    }
+  }
+  // Новую заявку или новую заметку коллеги-администратора удобно сразу открыть на странице администрирования.
+  if ((notification.type === 'NEW_SUBMISSION' || notification.type === 'NEW_TOOL_NOTE') && auth.isAdmin) {
+    notifOpen.value = false
+    router.push('/admin')
+  }
+}
+
+async function markAllRead() {
+  try {
+    await api.post('/notifications/read-all')
+    notifications.value.forEach((n) => (n.read = true))
+    unreadCount.value = 0
+  } catch {
+    // не критично
+  }
+}
+
+function formatNotifDate(value) {
+  return new Date(value).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+watch(
+  () => auth.isAuthenticated,
+  (isAuth) => {
+    if (isAuth) {
+      loadUnreadCount()
+      loadPendingModerationCount()
+    } else {
+      notifications.value = []
+      unreadCount.value = 0
+      notifOpen.value = false
+      pendingModerationCount.value = 0
+    }
+  }
+)
+
+onMounted(() => {
+  loadUnreadCount()
+  loadPendingModerationCount()
+  // Периодически обновляем счётчики - без полноценных веб-сокетов
+  // этого достаточно, чтобы бейджи не "залипали" надолго.
+  pollHandle = setInterval(() => {
+    loadUnreadCount()
+    loadPendingModerationCount()
+  }, 20000)
+})
+
+onUnmounted(() => {
+  clearInterval(pollHandle)
+})
 
 function logout() {
   auth.logout()
@@ -59,55 +189,127 @@ const vClickOutside = {
         </div>
       </RouterLink>
 
-      <nav class="header-nav">
-        <RouterLink to="/" class="nav-link" active-class="nav-link-active" title="Реестр">
-          <IconBase name="layers" :size="15" /> <span class="nav-link-label">Реестр</span>
-        </RouterLink>
+      <!-- Все действия справа сгруппированы в один кластер (margin-left: auto),
+           чтобы админ-кнопка не "плавала" отдельно от остальных иконок шапки. -->
+      <div class="header-actions">
         <RouterLink
           v-if="auth.isAdmin"
           to="/admin"
-          class="nav-link"
-          active-class="nav-link-active"
+          class="theme-toggle admin-toggle"
+          active-class="admin-toggle-active"
           title="Администрирование"
         >
-          <IconBase name="shield" :size="15" /> <span class="nav-link-label">Администрирование</span>
+          <IconBase name="shield" :size="17" />
+          <span v-if="pendingModerationCount" class="icon-badge">{{ pendingModerationCount > 9 ? '9+' : pendingModerationCount }}</span>
         </RouterLink>
-      </nav>
 
-      <button
-        type="button"
-        class="theme-toggle"
-        :title="currentTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема'"
-        @click="onToggleTheme"
-      >
-        <IconBase :name="currentTheme === 'dark' ? 'sun' : 'moon'" :size="17" />
-      </button>
+        <div
+          v-if="auth.isAuthenticated"
+          class="notif-wrap"
+          v-click-outside="() => (notifOpen = false)"
+        >
+          <button
+            type="button"
+            class="theme-toggle notif-toggle"
+            title="Уведомления"
+            @click="toggleNotifications"
+          >
+            <IconBase name="bell" :size="17" />
+            <span v-if="unreadCount" class="icon-badge">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
+          </button>
 
-      <div v-if="auth.isAuthenticated" class="header-user" @click="menuOpen = !menuOpen" v-click-outside="() => (menuOpen = false)">
-        <span class="user-avatar"><IconBase name="user" :size="16" /></span>
-        <span class="user-name">{{ auth.displayName }}</span>
-        <IconBase name="chevronDown" :size="14" />
+          <div v-if="notifOpen" class="notif-dropdown">
+            <div class="notif-dropdown-header">
+              <span>Уведомления</span>
+              <button
+                v-if="unreadNotifs.length"
+                type="button"
+                class="notif-mark-all"
+                @click="markAllRead"
+              >
+                Прочитать все
+              </button>
+            </div>
 
-        <div v-if="menuOpen" class="user-menu">
-          <div class="user-menu-role">
-            <IconBase name="shield" :size="13" />
-            {{ auth.isAdmin ? 'Администратор' : 'Пользователь' }}
+            <div class="notif-tab-bar">
+              <button
+                type="button"
+                class="notif-tab-btn"
+                :class="{ active: notifTab === 'unread' }"
+                @click="notifTab = 'unread'"
+              >
+                Новые
+                <span v-if="unreadNotifs.length" class="notif-tab-count">{{ unreadNotifs.length }}</span>
+              </button>
+              <button
+                type="button"
+                class="notif-tab-btn"
+                :class="{ active: notifTab === 'read' }"
+                @click="notifTab = 'read'"
+              >
+                Прочитанные
+              </button>
+            </div>
+
+            <div v-if="notifLoading" class="skeleton" style="height: 40px; margin: 8px;"></div>
+            <p v-else-if="!displayedNotifs.length" class="notif-empty">
+              {{ notifTab === 'unread' ? 'Нет новых уведомлений' : 'Прочитанных уведомлений нет' }}
+            </p>
+            <div v-else class="notif-list">
+              <button
+                v-for="n in displayedNotifs"
+                :key="n.id"
+                type="button"
+                class="notif-item"
+                :class="{ unread: !n.read }"
+                @click="onNotificationClick(n)"
+              >
+                <IconBase :name="notifMeta[n.type]?.icon || 'inbox'" :size="15" />
+                <span class="notif-item-text">
+                  <span class="notif-item-message">{{ n.message }}</span>
+                  <span class="notif-item-date">{{ formatNotifDate(n.createdAt) }}</span>
+                </span>
+                <span v-if="!n.read" class="notif-dot"></span>
+              </button>
+            </div>
           </div>
-          <button class="user-menu-item" @click="openProfile">
-            <IconBase name="edit" :size="15" /> Профиль
-          </button>
-          <button class="user-menu-item" @click="openMyDownloads">
-            <IconBase name="download" :size="15" /> Мои инструменты
-          </button>
-          <button class="user-menu-item" @click="logout">
-            <IconBase name="logout" :size="15" /> Выйти
-          </button>
         </div>
-      </div>
 
-      <div v-else class="header-guest">
-        <!-- Регистрация не отдельной кнопкой в шапке - ссылка на неё уже есть внутри формы входа. -->
-        <RouterLink to="/login" class="btn btn-primary btn-sm">Войти</RouterLink>
+        <button
+          type="button"
+          class="theme-toggle"
+          :title="currentTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема'"
+          @click="onToggleTheme"
+        >
+          <IconBase :name="currentTheme === 'dark' ? 'sun' : 'moon'" :size="17" />
+        </button>
+
+        <div v-if="auth.isAuthenticated" class="header-user" @click="menuOpen = !menuOpen" v-click-outside="() => (menuOpen = false)">
+          <span class="user-avatar"><IconBase name="user" :size="16" /></span>
+          <span class="user-name">{{ auth.displayName }}</span>
+          <IconBase name="chevronDown" :size="14" />
+
+          <div v-if="menuOpen" class="user-menu">
+            <div class="user-menu-role">
+              <IconBase name="shield" :size="13" />
+              {{ auth.isAdmin ? 'Администратор' : 'Пользователь' }}
+            </div>
+            <button class="user-menu-item" @click="openProfile">
+              <IconBase name="edit" :size="15" /> Профиль
+            </button>
+            <button class="user-menu-item" @click="openMyDownloads">
+              <IconBase name="download" :size="15" /> Мои инструменты
+            </button>
+            <button class="user-menu-item" @click="logout">
+              <IconBase name="logout" :size="15" /> Выйти
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="header-guest">
+          <!-- Регистрация не отдельной кнопкой в шапке - ссылка на неё уже есть внутри формы входа. -->
+          <RouterLink to="/login" class="btn btn-primary btn-sm">Войти</RouterLink>
+        </div>
       </div>
     </div>
 
@@ -167,33 +369,14 @@ const vClickOutside = {
   color: var(--text-muted);
 }
 
-.header-nav {
+/* Все действия справа (админка, уведомления, тема, профиль) - один кластер,
+   прижатый к правому краю, чтобы не оставалось "плавающих" элементов у логотипа. */
+.header-actions {
   display: flex;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-}
-
-.nav-link {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  text-decoration: none;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 14px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
+  gap: 10px;
+  margin-left: auto;
   flex-shrink: 0;
-}
-.nav-link:hover {
-  background: var(--surface-muted);
-  color: var(--text-primary);
-}
-.nav-link-active {
-  background: var(--accent-soft);
-  color: var(--accent-dark);
 }
 
 .header-guest {
@@ -213,6 +396,7 @@ const vClickOutside = {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-secondary);
+  text-decoration: none;
   cursor: pointer;
   flex-shrink: 0;
   transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
@@ -221,6 +405,201 @@ const vClickOutside = {
   border-color: var(--border-strong);
   color: var(--text-primary);
   background: var(--surface-muted);
+}
+
+.admin-toggle {
+  position: relative;
+}
+.admin-toggle-active {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+}
+
+.notif-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.notif-toggle {
+  position: relative;
+}
+
+.icon-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--danger, #d64545);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.notif-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 320px;
+  max-height: 380px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 30;
+}
+
+.notif-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.notif-mark-all {
+  background: none;
+  border: none;
+  color: var(--accent-dark);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  padding: 0;
+}
+.notif-mark-all:hover {
+  text-decoration: underline;
+}
+
+.notif-tab-bar {
+  display: flex;
+  gap: 4px;
+  margin: 8px;
+  padding: 3px;
+  background: var(--surface-muted);
+  border-radius: var(--radius-sm);
+}
+
+.notif-tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.notif-tab-btn:hover {
+  color: var(--text-primary);
+}
+.notif-tab-btn.active {
+  background: var(--surface);
+  color: var(--accent-dark);
+}
+
+.notif-tab-count {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+.notif-tab-btn.active .notif-tab-count {
+  background: var(--accent);
+  color: #fff;
+}
+
+.notif-empty {
+  padding: 18px 14px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 9px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.notif-item:hover {
+  background: var(--surface-muted);
+}
+.notif-item.unread {
+  background: var(--accent-soft);
+}
+.notif-item.unread:hover {
+  background: var(--accent-soft);
+  filter: brightness(0.97);
+}
+
+.notif-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-item-message {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.notif-item-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.notif-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-dark);
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+@media (max-width: 480px) {
+  .notif-dropdown { width: 280px; }
 }
 
 .header-user {
@@ -303,16 +682,13 @@ const vClickOutside = {
 }
 
 /* Порог подобран так, чтобы не оставалось "мёртвой зоны" между брейкпоинтами -
-   на средних ширинах (~720-900px) полная подпись бренда + оба пункта меню
-   с текстом + полное имя пользователя одновременно не помещаются и текст
-   начинает наезжать друг на друга. Поэтому самое "тяжёлое" (имя пользователя
-   и подписи пунктов меню) прячем одним и тем же брейкпоинтом. */
+   на средних ширинах (~720-900px) полная подпись бренда + полное имя пользователя
+   одновременно не помещаются и текст начинает наезжать друг на друга. Поэтому
+   самое "тяжёлое" (подпись бренда и имя пользователя) прячем одним брейкпоинтом. */
 @media (max-width: 960px) {
   .app-header-inner { gap: 14px; }
   .brand-sub { display: none; }
-  .header-nav { gap: 2px; }
-  .nav-link-label { display: none; }
-  .nav-link { padding: 8px; }
+  .header-actions { gap: 6px; }
   .user-name { display: none; }
 }
 
