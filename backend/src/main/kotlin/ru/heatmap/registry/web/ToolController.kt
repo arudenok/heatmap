@@ -7,6 +7,7 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/tools")
@@ -41,23 +42,23 @@ class ToolController(private val toolService: ToolService) {
         toolService.findDownloaded(principal)
 
     @GetMapping("/{id}")
-    fun getOne(@PathVariable id: Long, @AuthenticationPrincipal principal: UserPrincipal?): ToolResponse =
+    fun getOne(@PathVariable id: UUID, @AuthenticationPrincipal principal: UserPrincipal?): ToolResponse =
         toolService.findById(id, principal)
 
     // Просмотр засчитывается только по явному клику "Подробнее" на карточке, не за листинг.
     @PostMapping("/{id}/view")
-    fun registerView(@PathVariable id: Long, @AuthenticationPrincipal principal: UserPrincipal?): ToolResponse =
+    fun registerView(@PathVariable id: UUID, @AuthenticationPrincipal principal: UserPrincipal?): ToolResponse =
         toolService.incrementView(id, principal)
 
     // Скачивание засчитывается по клику "Скачать" в карточке "Подробнее".
     @PostMapping("/{id}/download")
-    fun registerDownload(@PathVariable id: Long, @AuthenticationPrincipal principal: UserPrincipal?): ToolResponse =
+    fun registerDownload(@PathVariable id: UUID, @AuthenticationPrincipal principal: UserPrincipal?): ToolResponse =
         toolService.incrementDownload(id, principal)
 
     // Оценка предлагается пользователю после скачивания инструмента; требует авторизации.
     @PostMapping("/{id}/rating")
     fun rate(
-        @PathVariable id: Long,
+        @PathVariable id: UUID,
         @Valid @RequestBody request: RateToolRequest,
         @AuthenticationPrincipal principal: UserPrincipal
     ): ToolResponse = toolService.rate(id, request.rating, principal)
@@ -71,13 +72,13 @@ class ToolController(private val toolService: ToolService) {
 
     @PatchMapping("/{id}")
     fun update(
-        @PathVariable id: Long,
+        @PathVariable id: UUID,
         @Valid @RequestBody request: UpdateToolRequest,
         @AuthenticationPrincipal principal: UserPrincipal
     ): ToolResponse = toolService.update(id, request, principal)
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun delete(@PathVariable id: Long, @AuthenticationPrincipal principal: UserPrincipal) =
+    fun delete(@PathVariable id: UUID, @AuthenticationPrincipal principal: UserPrincipal) =
         toolService.delete(id, principal)
 }

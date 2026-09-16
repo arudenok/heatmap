@@ -4,9 +4,9 @@
 --comment: оценки инструмента пользователями по 5-балльной шкале - предлагается после скачивания
 CREATE TABLE tool_rating
 (
-    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-    tool_id       BIGINT    NOT NULL,
-    user_id       BIGINT    NOT NULL,
+    id            UUID DEFAULT RANDOM_UUID() PRIMARY KEY,
+    tool_id       UUID      NOT NULL,
+    user_id       UUID      NOT NULL,
     rating_value  INT       NOT NULL,
     created_at    TIMESTAMP NOT NULL,
     updated_at    TIMESTAMP NOT NULL,

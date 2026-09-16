@@ -6,6 +6,7 @@ import AdminModerationPanel from '../components/AdminModerationPanel.vue'
 import AdminToolsPanel from '../components/AdminToolsPanel.vue'
 import AdminUsersPanel from '../components/AdminUsersPanel.vue'
 import AdminImpactPanel from '../components/AdminImpactPanel.vue'
+import AdminArchivePanel from '../components/AdminArchivePanel.vue'
 import IconBase from '../components/IconBase.vue'
 
 const activeSection = ref('moderation')
@@ -13,6 +14,7 @@ const activeSection = ref('moderation')
 const sections = [
   { key: 'moderation', label: 'Модерация', icon: 'inbox' },
   { key: 'tools', label: 'Инструменты', icon: 'layers' },
+  { key: 'archive', label: 'Архив', icon: 'archive' },
   { key: 'users', label: 'Пользователи', icon: 'users' },
   { key: 'impact', label: 'Метрики влияния', icon: 'gauge' }
 ]
@@ -84,6 +86,7 @@ onUnmounted(() => {
         @changed="onModerationChanged"
       />
       <AdminToolsPanel v-else-if="activeSection === 'tools'" />
+      <AdminArchivePanel v-else-if="activeSection === 'archive'" />
       <AdminUsersPanel v-else-if="activeSection === 'users'" />
       <AdminImpactPanel v-else-if="activeSection === 'impact'" />
     </main>

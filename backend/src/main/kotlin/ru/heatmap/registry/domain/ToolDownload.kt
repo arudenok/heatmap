@@ -2,6 +2,7 @@ package ru.heatmap.registry.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Факт скачивания инструмента пользователем - используется, чтобы засчитывать
@@ -11,8 +12,8 @@ import java.time.Instant
 @Table(name = "tool_download", uniqueConstraints = [UniqueConstraint(columnNames = ["tool_id", "user_id"])])
 class ToolDownload(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
+    @GeneratedValue(strategy = GenerationType.UUID)
+    var id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tool_id", nullable = false)

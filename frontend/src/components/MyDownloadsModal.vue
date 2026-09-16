@@ -37,7 +37,8 @@ const stageMeta = {
 const statusMeta = {
   PENDING: { label: 'На модерации', class: 'badge-warn' },
   PUBLISHED: { label: 'Опубликован', class: 'badge-info' },
-  REJECTED: { label: 'Отклонено', class: 'badge-danger' }
+  REJECTED: { label: 'Отклонено', class: 'badge-danger' },
+  ARCHIVED: { label: 'В архиве', class: 'badge-muted' }
 }
 
 async function loadDownloaded() {
@@ -116,8 +117,9 @@ async function openDetail(tool) {
   }
 }
 
-// Редактировать из вкладки "Загруженные" можно только заявку, ещё не прошедшую модерацию -
-// это дублирует проверку на бэкенде (ToolService.update), но не даёт открыть форму впустую.
+// Редактировать из вкладки "Загруженные" можно инструмент в любом статусе - правки уже
+// опубликованного или отклонённого отправят его на повторную модерацию (см. ToolService.update
+// и AddToolModal.isResubmitEdit, где для этого уже есть отдельная подпись формы).
 function openEditModal(tool) {
   editingTool.value = tool
   editModalOpen.value = true
@@ -231,7 +233,6 @@ watch(open, (value) => {
             </button>
             <div class="my-uploads-actions">
               <button
-                v-if="tool.status === 'PENDING'"
                 class="btn btn-ghost btn-sm"
                 type="button"
                 @click="openEditModal(tool)"

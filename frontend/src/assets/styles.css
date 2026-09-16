@@ -310,6 +310,7 @@ textarea.input {
 .badge-accent { background: var(--accent-soft); color: var(--accent-dark); border-color: transparent; }
 .badge-warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .badge-danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+.badge-muted { background: var(--surface-muted); color: var(--text-muted); border-color: transparent; }
 
 .tag {
   font-size: 12px;

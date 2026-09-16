@@ -50,6 +50,10 @@ async function onSubmit() {
 <template>
   <div class="auth-screen">
     <div class="auth-card panel">
+      <RouterLink to="/" class="auth-close" aria-label="Закрыть и вернуться на главную">
+        <IconBase name="x" :size="16" />
+      </RouterLink>
+
       <RouterLink to="/" class="auth-brand">
         <span class="auth-brand-icon"><IconBase name="layers" :size="22" /></span>
         <div>
@@ -134,9 +138,30 @@ async function onSubmit() {
 }
 
 .auth-card {
+  position: relative;
   width: 100%;
   max-width: 440px;
   padding: 36px 34px;
+}
+
+/* Крестик "передумал" - на случай, если пользователь открыл форму входа/регистрации
+   и решил вернуться на главную (реестр доступен без входа, см. router/index.js). */
+.auth-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.auth-close:hover {
+  background: var(--surface-muted);
+  color: var(--text-primary);
 }
 
 .auth-brand {

@@ -114,13 +114,22 @@ async function loadMine() {
   }
   try {
     const { data } = await api.get('/tools/mine')
-    // Показываем все свои инструменты, включая опубликованные - их тоже можно
-    // редактировать (правки отправят инструмент на повторную модерацию).
     myTools.value = data
   } catch {
     myTools.value = []
   }
 }
+
+// Виджет "Мои инструменты на модерации" отслеживает только заявки, требующие внимания
+// автора - на модерации или отклонённые (их можно поправить и отправить заново).
+// Опубликованный инструмент из виджета убираем - он уже виден в общем реестре, где его
+// тоже можно отредактировать (карточка → "Подробнее" → "Редактировать", см. ToolDetailModal);
+// такая правка от автора (не администратора) точно так же вернёт инструмент на модерацию.
+// Архивированный администратором инструмент сюда тоже не попадает - это не то, что
+// требует действий автора прямо сейчас (см. уведомление об архивации).
+const myPendingTools = computed(() =>
+  myTools.value.filter((t) => t.status === 'PENDING' || t.status === 'REJECTED')
+)
 
 function openAddModal() {
   if (!auth.isAuthenticated) {
@@ -173,6 +182,13 @@ async function onDeleteTool(tool) {
 async function onDeleteFromDetail(tool) {
   const deleted = await onDeleteTool(tool)
   if (deleted) detailOpen.value = false
+}
+
+// Правка из модалки "Подробнее" (см. ToolDetailModal) - закрываем её и открываем ту же
+// форму редактирования, что и из виджета "Мои инструменты на модерации".
+function onEditFromDetail(tool) {
+  detailOpen.value = false
+  openEditModal(tool)
 }
 
 // Просмотр засчитывается только по клику "Подробнее", не за сам факт показа карточки.
@@ -233,10 +249,10 @@ onMounted(() => {
 
       <StatsGrid v-model="activeTab" :stats="stats" :counts="counts" :loading="loadingTop" />
 
-      <div v-if="myTools.length" class="my-requests panel">
-        <div class="my-requests-title"><IconBase name="clock" :size="15" /> Мои инструменты</div>
+      <div v-if="myPendingTools.length" class="my-requests panel">
+        <div class="my-requests-title"><IconBase name="clock" :size="15" /> Мои инструменты на модерации</div>
         <div class="my-requests-list">
-          <div v-for="t in myTools" :key="t.id" class="my-request-row">
+          <div v-for="t in myPendingTools" :key="t.id" class="my-request-row">
             <div class="my-request-main">
               <span class="my-request-name">{{ t.name }}</span>
               <span
@@ -325,6 +341,7 @@ onMounted(() => {
       :tool="detailTool"
       @delete="onDeleteFromDetail"
       @downloaded="onToolDownloaded"
+      @edit="onEditFromDetail"
     />
     <RatingPrompt :tool="ratingPromptTool" @close="ratingPromptTool = null" @rated="onRated" />
   </div>

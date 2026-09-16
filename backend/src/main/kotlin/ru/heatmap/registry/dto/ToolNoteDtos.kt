@@ -3,11 +3,12 @@ package ru.heatmap.registry.dto
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.Instant
+import java.util.UUID
 
 data class ToolNoteResponse(
-    val id: Long,
-    val toolId: Long,
-    val authorId: Long,
+    val id: UUID,
+    val toolId: UUID,
+    val authorId: UUID,
     val authorName: String,
     val text: String,
     // true, если заметку оставил текущий пользователь - только он может её редактировать/удалить.

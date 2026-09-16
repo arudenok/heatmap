@@ -17,7 +17,8 @@ const cards = [
   { key: 'usage', icon: 'trend', label: 'Usage · адаптированы', tone: 'success', value: (s, c) => c?.usage, sub: () => 'активно используются', tab: 'USAGE' },
   { key: 'habit', icon: 'flame', label: 'Habit', tone: 'fire', value: (s, c) => c?.habit, sub: () => 'вошли в привычку', tab: 'HABIT' },
   { key: 'standard', icon: 'star', label: 'Process Standard', tone: 'warn', value: (s, c) => c?.standard, sub: () => 'эталонные решения', tab: 'STANDARD' },
-  { key: 'avgEfficiency', icon: 'gauge', label: 'Средняя эффективность', tone: 'danger', value: (s) => s?.avgEfficiency, sub: () => 'по всем инструментам', suffix: '%', tab: null }
+  // Пока не считаем на бэке (см. StatsResponse) - карточка временно статичная заглушка.
+  { key: 'avgEfficiency', icon: 'gauge', label: 'Средняя эффективность', tone: 'danger', value: () => 'TBD', sub: () => 'Метрика в разработке', tab: null }
 ]
 
 const activeTab = defineModel({ default: 'ALL' })

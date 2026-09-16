@@ -2,9 +2,10 @@ package ru.heatmap.registry.dto
 
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
+import java.util.UUID
 
 data class ImpactRowResponse(
-    val id: Long,
+    val id: UUID,
     val label: String,
     val value: String,
     val colorVariant: String,

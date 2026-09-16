@@ -14,6 +14,7 @@ import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Заметки администраторов к инструменту - внутренняя переписка, не видна обычным пользователям
@@ -29,13 +30,13 @@ class ToolNoteService(
     private val notificationService: NotificationService
 ) {
 
-    fun listByTool(toolId: Long, principal: UserPrincipal): List<ToolNoteResponse> {
+    fun listByTool(toolId: UUID, principal: UserPrincipal): List<ToolNoteResponse> {
         if (!aiToolRepository.existsById(toolId)) throw NotFoundException("Инструмент не найден")
         return toolNoteRepository.findByToolIdOrderByCreatedAtAsc(toolId).map { it.toResponse(principal) }
     }
 
     @Transactional
-    fun create(toolId: Long, request: CreateToolNoteRequest, principal: UserPrincipal): ToolNoteResponse {
+    fun create(toolId: UUID, request: CreateToolNoteRequest, principal: UserPrincipal): ToolNoteResponse {
         val tool = aiToolRepository.findByIdOrNull(toolId) ?: throw NotFoundException("Инструмент не найден")
         val author = appUserRepository.findByIdOrNull(principal.id) ?: throw NotFoundException("Пользователь не найден")
         // createdAt/updatedAt отдельно задают Instant.now() по умолчанию - две пары вызовов почти
@@ -49,7 +50,7 @@ class ToolNoteService(
     }
 
     @Transactional
-    fun update(noteId: Long, request: UpdateToolNoteRequest, principal: UserPrincipal): ToolNoteResponse {
+    fun update(noteId: UUID, request: UpdateToolNoteRequest, principal: UserPrincipal): ToolNoteResponse {
         val note = toolNoteRepository.findByIdOrNull(noteId) ?: throw NotFoundException("Заметка не найдена")
         if (note.author.id != principal.id) {
             throw ForbiddenException("Редактировать можно только собственную заметку")
@@ -60,7 +61,7 @@ class ToolNoteService(
     }
 
     @Transactional
-    fun delete(noteId: Long, principal: UserPrincipal) {
+    fun delete(noteId: UUID, principal: UserPrincipal) {
         val note = toolNoteRepository.findByIdOrNull(noteId) ?: throw NotFoundException("Заметка не найдена")
         if (note.author.id != principal.id) {
             throw ForbiddenException("Удалить можно только собственную заметку")

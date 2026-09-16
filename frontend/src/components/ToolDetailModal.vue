@@ -10,7 +10,7 @@ const props = defineProps({
 })
 
 const open = defineModel({ default: false })
-const emit = defineEmits(['delete', 'downloaded'])
+const emit = defineEmits(['delete', 'downloaded', 'edit'])
 const auth = useAuthStore()
 
 // Заметки администраторов - отдельная модалка поверх этой же карточки инструмента,
@@ -30,6 +30,13 @@ function close() {
 
 function onDelete() {
   emit('delete', props.tool)
+}
+
+// Правка своего инструмента доступна из общего реестра (не только из виджета "Мои инструменты
+// на модерации" - тот больше не показывает опубликованные). Правка от автора (не администратора)
+// уже опубликованного или отклонённого инструмента отправит его на повторную модерацию (см. ToolService.update).
+function onEdit() {
+  emit('edit', props.tool)
 }
 
 // Скачивание засчитывается по клику: увеличиваем счётчик, открываем ссылку на источник
@@ -131,6 +138,14 @@ function formatDate(value) {
 
       <div class="modal-actions">
         <div class="modal-actions-left">
+          <button
+            v-if="tool.canManage"
+            type="button"
+            class="btn btn-ghost"
+            @click="onEdit"
+          >
+            <IconBase name="edit" :size="14" /> Редактировать
+          </button>
           <button
             v-if="tool.canManage"
             type="button"

@@ -8,9 +8,9 @@
 --comment: удаляются вместе с ним (ON DELETE CASCADE).
 CREATE TABLE tool_note
 (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    tool_id    BIGINT        NOT NULL,
-    author_id  BIGINT        NOT NULL,
+    id         UUID DEFAULT RANDOM_UUID() PRIMARY KEY,
+    tool_id    UUID          NOT NULL,
+    author_id  UUID          NOT NULL,
     text       VARCHAR(2000) NOT NULL,
     created_at TIMESTAMP     NOT NULL,
     updated_at TIMESTAMP     NOT NULL,

@@ -14,6 +14,7 @@ import ru.heatmap.registry.web.NotFoundException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 @Service
 class AdminUserService(
@@ -40,7 +41,7 @@ class AdminUserService(
     }
 
     @Transactional
-    fun updateRole(userId: Long, roleValue: String, actingAdminId: Long): UserResponse {
+    fun updateRole(userId: UUID, roleValue: String, actingAdminId: UUID): UserResponse {
         val user = appUserRepository.findByIdOrNull(userId) ?: throw NotFoundException("Пользователь не найден")
         val role = runCatching { Role.valueOf(roleValue.uppercase()) }
             .getOrElse { throw BadRequestException("Некорректная роль: $roleValue") }
@@ -53,7 +54,7 @@ class AdminUserService(
     }
 
     @Transactional
-    fun updateEnabled(userId: Long, enabled: Boolean, actingAdminId: Long): UserResponse {
+    fun updateEnabled(userId: UUID, enabled: Boolean, actingAdminId: UUID): UserResponse {
         val user = appUserRepository.findByIdOrNull(userId) ?: throw NotFoundException("Пользователь не найден")
         if (user.id == actingAdminId && !enabled) {
             throw ConflictException("Нельзя заблокировать собственную учётную запись")
@@ -68,7 +69,7 @@ class AdminUserService(
     // А вот оценки и скачивания пользователя удаляем явно - на эти таблицы
     // ON DELETE SET NULL не настроен, и без явной очистки FK не даст удалить app_user.
     @Transactional
-    fun delete(userId: Long, actingAdminId: Long) {
+    fun delete(userId: UUID, actingAdminId: UUID) {
         val user = appUserRepository.findByIdOrNull(userId) ?: throw NotFoundException("Пользователь не найден")
         if (user.id == actingAdminId) {
             throw ConflictException("Нельзя удалить собственную учётную запись")

@@ -1,11 +1,12 @@
 package ru.heatmap.registry.dto
 
 import java.time.Instant
+import java.util.UUID
 
 data class NotificationResponse(
-    val id: Long,
+    val id: UUID,
     val type: String,
-    val toolId: Long?,
+    val toolId: UUID?,
     val toolName: String,
     // Готовый текст на русском - фронту не нужно самому расшифровывать type/toolName.
     val message: String,

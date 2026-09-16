@@ -2,13 +2,14 @@ package ru.heatmap.registry.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import java.util.UUID
 
 @Entity
 @Table(name = "app_user")
 class AppUser(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
+    @GeneratedValue(strategy = GenerationType.UUID)
+    var id: UUID? = null,
 
     @Column(nullable = false, unique = true, length = 64)
     var username: String,

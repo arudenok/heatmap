@@ -2,6 +2,7 @@ package ru.heatmap.registry.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Уведомление пользователю: администратору - о новой заявке на модерацию,
@@ -13,8 +14,8 @@ import java.time.Instant
 @Table(name = "notification")
 class Notification(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
+    @GeneratedValue(strategy = GenerationType.UUID)
+    var id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -25,7 +26,7 @@ class Notification(
     var type: NotificationType,
 
     @Column(name = "tool_id")
-    var toolId: Long?,
+    var toolId: UUID?,
 
     @Column(name = "tool_name", nullable = false)
     var toolName: String,
@@ -46,5 +47,6 @@ enum class NotificationType {
     NEW_SUBMISSION,
     SUBMISSION_APPROVED,
     SUBMISSION_REJECTED,
-    NEW_TOOL_NOTE
+    NEW_TOOL_NOTE,
+    TOOL_ARCHIVED
 }

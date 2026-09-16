@@ -2,14 +2,15 @@ package ru.heatmap.registry.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import java.util.UUID
 
 /** Оценка инструмента пользователем по 5-балльной шкале - предлагается после скачивания. */
 @Entity
 @Table(name = "tool_rating", uniqueConstraints = [UniqueConstraint(columnNames = ["tool_id", "user_id"])])
 class ToolRating(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
+    @GeneratedValue(strategy = GenerationType.UUID)
+    var id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tool_id", nullable = false)

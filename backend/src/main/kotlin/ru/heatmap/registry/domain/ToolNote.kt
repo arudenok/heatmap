@@ -2,6 +2,7 @@ package ru.heatmap.registry.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Заметка администратора к инструменту - внутренняя переписка между администраторами
@@ -13,8 +14,8 @@ import java.time.Instant
 @Table(name = "tool_note")
 class ToolNote(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
+    @GeneratedValue(strategy = GenerationType.UUID)
+    var id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tool_id", nullable = false)

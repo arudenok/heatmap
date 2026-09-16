@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 @Service
 class ToolService(
@@ -57,7 +58,7 @@ class ToolService(
      * не более чем 1% опубликованных инструментов с лучшим сочетанием оценки пользователей,
      * просмотров и скачиваний (при равенстве прочего оценка весит больше всего).
      */
-    private fun computeTopIds(): Set<Long> {
+    private fun computeTopIds(): Set<UUID> {
         val published = aiToolRepository.findAll(statusSpec(ToolStatus.PUBLISHED))
         if (published.isEmpty()) return emptySet()
 
@@ -118,14 +119,12 @@ class ToolService(
         val all = aiToolRepository.findAll(statusSpec(ToolStatus.PUBLISHED))
         val weekAgo = Instant.now().minus(7, ChronoUnit.DAYS)
         val newThisWeek = all.count { it.createdAt.isAfter(weekAgo) }
-        val avgEfficiency = if (all.isEmpty()) 0 else all.sumOf { it.efficiencyPct } / all.size
         return StatsResponse(
             totalTools = all.size.toLong(),
             newThisWeek = newThisWeek.toLong(),
             accessCount = all.count { it.stage == ToolStage.ACCESS }.toLong(),
             usageCount = all.count { it.stage == ToolStage.USAGE }.toLong(),
-            standardCount = all.count { it.stage == ToolStage.STANDARD }.toLong(),
-            avgEfficiency = avgEfficiency
+            standardCount = all.count { it.stage == ToolStage.STANDARD }.toLong()
         )
     }
 
@@ -138,7 +137,7 @@ class ToolService(
         )
     }
 
-    fun findById(id: Long, principal: UserPrincipal?): ToolResponse {
+    fun findById(id: UUID, principal: UserPrincipal?): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         return tool.toResponse(principal, computeTopIds())
     }
@@ -165,7 +164,7 @@ class ToolService(
     }
 
     @Transactional
-    fun update(id: Long, request: UpdateToolRequest, principal: UserPrincipal): ToolResponse {
+    fun update(id: UUID, request: UpdateToolRequest, principal: UserPrincipal): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         val isAdmin = principal.role == "ADMIN"
         val isOwner = tool.createdBy?.id == principal.id
@@ -203,7 +202,7 @@ class ToolService(
     }
 
     @Transactional
-    fun delete(id: Long, principal: UserPrincipal) {
+    fun delete(id: UUID, principal: UserPrincipal) {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         val isAdmin = principal.role == "ADMIN"
         val isOwner = tool.createdBy?.id == principal.id
@@ -216,7 +215,7 @@ class ToolService(
 
     /** Счётчик просмотров увеличивается по клику "Подробнее" на карточке инструмента. */
     @Transactional
-    fun incrementView(id: Long, principal: UserPrincipal?): ToolResponse {
+    fun incrementView(id: UUID, principal: UserPrincipal?): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         tool.views += 1
         return aiToolRepository.save(tool).toResponse(principal, computeTopIds())
@@ -229,7 +228,7 @@ class ToolService(
      * поэтому их скачивания считаются как есть.
      */
     @Transactional
-    fun incrementDownload(id: Long, principal: UserPrincipal?): ToolResponse {
+    fun incrementDownload(id: UUID, principal: UserPrincipal?): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         if (principal == null) {
             tool.downloads += 1
@@ -246,7 +245,7 @@ class ToolService(
      * Повторная оценка того же пользователя пересчитывает сумму, а не добавляет новую запись.
      */
     @Transactional
-    fun rate(id: Long, value: Int, principal: UserPrincipal): ToolResponse {
+    fun rate(id: UUID, value: Int, principal: UserPrincipal): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         val existing = toolRatingRepository.findByToolIdAndUserId(id, principal.id)
         if (existing != null) {
@@ -273,7 +272,7 @@ class ToolService(
     /** Собственные инструменты пользователя, включая те, что ещё на модерации или отклонены. */
     fun findMine(principal: UserPrincipal): List<ToolResponse> {
         val spec = Specification<AiTool> { root, _, cb ->
-            cb.equal(root.get<Any>("createdBy").get<Long>("id"), principal.id)
+            cb.equal(root.get<Any>("createdBy").get<UUID>("id"), principal.id)
         }
         val sort = org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")
         val topIds = computeTopIds()
@@ -287,7 +286,7 @@ class ToolService(
         aiToolRepository.findAll(statusSpec(ToolStatus.PENDING)).map { it.toResponse(principal, emptySet()) }
 
     @Transactional
-    fun approve(id: Long): ToolResponse {
+    fun approve(id: UUID): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         tool.status = ToolStatus.PUBLISHED
         tool.rejectionReason = null
@@ -298,7 +297,7 @@ class ToolService(
     }
 
     @Transactional
-    fun reject(id: Long, reason: String): ToolResponse {
+    fun reject(id: UUID, reason: String): ToolResponse {
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         tool.status = ToolStatus.REJECTED
         tool.rejectionReason = reason.trim()
@@ -309,6 +308,39 @@ class ToolService(
         return saved.toResponse(null, emptySet())
     }
 
+    // Инструменты в архиве всегда PUBLISHED-in-the-past, но самим статусом ARCHIVED уже
+    // не попадают в обычный реестр (см. statusSpec(PUBLISHED) в findByTab/computeTopIds) -
+    // отдельная выборка нужна только для вкладки "Архив" в администрировании.
+    fun archived(principal: UserPrincipal): List<ToolResponse> =
+        aiToolRepository.findAll(statusSpec(ToolStatus.ARCHIVED)).map { it.toResponse(principal, emptySet()) }
+
+    /** Комментарий необязателен (см. ArchiveToolRequest) - уведомление автору уходит в любом случае. */
+    @Transactional
+    fun archive(id: UUID, reason: String?): ToolResponse {
+        val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
+        if (tool.status != ToolStatus.PUBLISHED) {
+            throw BadRequestException("Архивировать можно только опубликованный инструмент")
+        }
+        tool.status = ToolStatus.ARCHIVED
+        tool.updatedAt = Instant.now()
+        val saved = aiToolRepository.save(tool)
+        notificationService.notifyOwnerOfArchive(saved, reason?.trim()?.takeIf { it.isNotBlank() })
+        return saved.toResponse(null, emptySet())
+    }
+
+    // Восстановление всегда возвращает в PUBLISHED - архивировать можно только опубликованный
+    // инструмент (см. archive выше), поэтому "восстановить" однозначно значит "опубликовать снова".
+    @Transactional
+    fun restore(id: UUID): ToolResponse {
+        val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
+        if (tool.status != ToolStatus.ARCHIVED) {
+            throw BadRequestException("Восстановить можно только архивированный инструмент")
+        }
+        tool.status = ToolStatus.PUBLISHED
+        tool.updatedAt = Instant.now()
+        return aiToolRepository.save(tool).toResponse(null, emptySet())
+    }
+
     private inline fun <reified T : Enum<T>> parseEnum(value: String, fieldLabel: String): T =
         runCatching { enumValueOf<T>(value.uppercase()) }
             .getOrElse { throw BadRequestException("Некорректное значение поля \"$fieldLabel\": $value") }
@@ -316,9 +348,9 @@ class ToolService(
     private fun statusSpec(status: ToolStatus): Specification<AiTool> =
         Specification { root, _, cb -> cb.equal(root.get<ToolStatus>("status"), status) }
 
-    private fun tabSpec(tab: String, topIds: Set<Long>): Specification<AiTool>? =
+    private fun tabSpec(tab: String, topIds: Set<UUID>): Specification<AiTool>? =
         when (tab.uppercase()) {
-            "TOP" -> Specification { root, _, _ -> root.get<Long>("id").`in`(topIds) }
+            "TOP" -> Specification { root, _, _ -> root.get<UUID>("id").`in`(topIds) }
             "ACCESS" -> Specification { root, _, cb -> cb.equal(root.get<ToolStage>("stage"), ToolStage.ACCESS) }
             "USAGE" -> Specification { root, _, cb -> cb.equal(root.get<ToolStage>("stage"), ToolStage.USAGE) }
             "HABIT" -> Specification { root, _, cb -> cb.equal(root.get<ToolStage>("stage"), ToolStage.HABIT) }
@@ -349,7 +381,7 @@ class ToolService(
             )
         }
 
-    private fun AiTool.toResponse(principal: UserPrincipal?, topIds: Set<Long>): ToolResponse {
+    private fun AiTool.toResponse(principal: UserPrincipal?, topIds: Set<UUID>): ToolResponse {
         val canManage = principal != null && (principal.role == "ADMIN" || this.createdBy?.id == principal.id)
         val myRating = principal?.let {
             toolRatingRepository.findByToolIdAndUserId(this.id!!, it.id)?.value

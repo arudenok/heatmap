@@ -4,10 +4,10 @@
 --comment: уведомления - админам о новых заявках на модерацию, пользователям о результате модерации их заявки
 CREATE TABLE notification
 (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id    BIGINT       NOT NULL,
+    id         UUID DEFAULT RANDOM_UUID() PRIMARY KEY,
+    user_id    UUID         NOT NULL,
     type       VARCHAR(32)  NOT NULL,
-    tool_id    BIGINT,
+    tool_id    UUID,
     tool_name  VARCHAR(255) NOT NULL,
     is_read    BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP    NOT NULL,

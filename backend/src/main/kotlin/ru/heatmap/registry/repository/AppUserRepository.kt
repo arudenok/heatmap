@@ -3,8 +3,9 @@ package ru.heatmap.registry.repository
 import ru.heatmap.registry.domain.AppUser
 import ru.heatmap.registry.domain.Role
 import org.springframework.data.jpa.repository.JpaRepository
+import java.util.UUID
 
-interface AppUserRepository : JpaRepository<AppUser, Long> {
+interface AppUserRepository : JpaRepository<AppUser, UUID> {
     fun findByUsernameIgnoreCase(username: String): AppUser?
     fun existsByUsernameIgnoreCase(username: String): Boolean
 

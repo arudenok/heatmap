@@ -4,6 +4,7 @@ import api, { extractErrorMessage } from '../services/api'
 import IconBase from './IconBase.vue'
 import AddToolModal from './AddToolModal.vue'
 import ToolNotesModal from './ToolNotesModal.vue'
+import ToolDetailModal from './ToolDetailModal.vue'
 
 const tools = ref([])
 const loading = ref(true)
@@ -30,6 +31,36 @@ const notesTool = ref(null)
 function openNotes(tool) {
   notesTool.value = tool
   notesOpen.value = true
+}
+
+// Архивирование - как отклонение заявки (см. AdminModerationPanel), только комментарий
+// необязателен: администратор может архивировать инструмент и без пояснения (ArchiveToolRequest).
+const archivingId = ref(null)
+const archiveReasonText = ref('')
+
+function startArchive(tool) {
+  archivingId.value = tool.id
+  archiveReasonText.value = ''
+}
+
+function cancelArchive() {
+  archivingId.value = null
+  archiveReasonText.value = ''
+}
+
+async function confirmArchive(tool) {
+  busyId.value = tool.id
+  try {
+    await api.post(`/admin/tools/${tool.id}/archive`, { reason: archiveReasonText.value.trim() || null })
+    // Архивированный инструмент больше не PUBLISHED - список (tab=ALL) его и не вернёт,
+    // поэтому проще сразу убрать строку локально, чем перезапрашивать весь список.
+    tools.value = tools.value.filter((t) => t.id !== tool.id)
+    archivingId.value = null
+  } catch (e) {
+    error.value = extractErrorMessage(e, 'Не удалось архивировать инструмент')
+  } finally {
+    busyId.value = null
+  }
 }
 
 const STAGE_OPTIONS = [
@@ -72,6 +103,41 @@ function openEditModal(tool) {
 async function onToolUpdated() {
   editingTool.value = null
   await load()
+}
+
+// Карточка "Подробнее" - та же модалка, что и в общем реестре (см. DashboardView/MyDownloadsModal).
+// Клик по всей строке (кроме селекта этапа и кнопок справа - см. @click.stop в шаблоне)
+// засчитывает просмотр и открывает ToolDetailModal; администратору в ней доступны
+// "Редактировать" и "Удалить" (canManage у админа = true для любого инструмента, см. ToolService.toResponse).
+const detailOpen = ref(false)
+const detailTool = ref(null)
+
+async function openDetail(tool) {
+  try {
+    const { data } = await api.post(`/tools/${tool.id}/view`)
+    Object.assign(tool, data)
+  } catch {
+    // счётчик просмотров не критичен - открываем карточку даже если запрос не прошёл
+  } finally {
+    detailTool.value = tool
+    detailOpen.value = true
+  }
+}
+
+function onEditFromDetail(tool) {
+  detailOpen.value = false
+  openEditModal(tool)
+}
+
+async function onDeleteFromDetail(tool) {
+  if (!confirm(`Удалить инструмент «${tool.name}»?`)) return
+  try {
+    await api.delete(`/tools/${tool.id}`)
+    tools.value = tools.value.filter((t) => t.id !== tool.id)
+    detailOpen.value = false
+  } catch (e) {
+    error.value = extractErrorMessage(e, 'Не удалось удалить инструмент')
+  }
 }
 
 async function onStageChange(tool, newStage) {
@@ -137,7 +203,12 @@ defineExpose({ refresh: load })
     </div>
 
     <div v-else class="tools-list">
-      <div v-for="tool in displayedTools" :key="tool.id" class="tools-row">
+      <div
+        v-for="tool in displayedTools"
+        :key="tool.id"
+        class="tools-row"
+        @click="openDetail(tool)"
+      >
         <div class="tools-info">
           <div class="tools-title">
             {{ tool.name }}
@@ -149,23 +220,50 @@ defineExpose({ refresh: load })
             <span class="tag">👤 {{ tool.ownerName }}</span>
           </div>
         </div>
-        <div class="tools-actions">
+        <div v-if="archivingId !== tool.id" class="tools-actions">
           <label class="stage-label">Этап:</label>
           <select
             class="input stage-select"
             :value="tool.stage"
             :disabled="busyId === tool.id"
+            @click.stop
             @change="onStageChange(tool, $event.target.value)"
           >
             <option v-for="opt in STAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
-          <button class="btn btn-ghost btn-sm" type="button" @click="openEditModal(tool)">
-            <IconBase name="edit" :size="13" /> Редактировать
-          </button>
-          <button class="btn btn-ghost btn-sm notes-action-btn" type="button" @click="openNotes(tool)">
+          <button class="btn btn-ghost btn-sm notes-action-btn" type="button" @click.stop="openNotes(tool)">
             <IconBase name="note" :size="13" /> Заметки
             <span v-if="tool.notesCount" class="badge badge-info">{{ tool.notesCount }}</span>
           </button>
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            :disabled="busyId === tool.id"
+            @click.stop="startArchive(tool)"
+          >
+            <IconBase name="archive" :size="13" /> Архивировать
+          </button>
+        </div>
+        <div v-else class="archive-form" @click.stop>
+          <textarea
+            v-model="archiveReasonText"
+            class="input archive-textarea"
+            rows="2"
+            placeholder="Комментарий для автора (необязательно) - почему инструмент архивирован"
+          ></textarea>
+          <div class="archive-form-actions">
+            <button class="btn btn-ghost btn-sm" type="button" :disabled="busyId === tool.id" @click="cancelArchive">
+              Отмена
+            </button>
+            <button
+              class="btn btn-danger btn-sm"
+              type="button"
+              :disabled="busyId === tool.id"
+              @click="confirmArchive(tool)"
+            >
+              Подтвердить архивацию
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -177,6 +275,12 @@ defineExpose({ refresh: load })
       @updated="onToolUpdated"
     />
     <ToolNotesModal v-model="notesOpen" :tool="notesTool" />
+    <ToolDetailModal
+      v-model="detailOpen"
+      :tool="detailTool"
+      @edit="onEditFromDetail"
+      @delete="onDeleteFromDetail"
+    />
   </div>
 </template>
 
@@ -241,6 +345,15 @@ defineExpose({ refresh: load })
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   flex-wrap: wrap;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+/* Вся строка (кроме селекта этапа и кнопок справа - см. @click.stop на них) кликабельна и
+   открывает ту же карточку "Подробнее", что и в общем реестре (см. openDetail/ToolDetailModal
+   и аналогичный паттерн в ToolCard.vue). "Редактировать" теперь доступен только из модалки. */
+.tools-row:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 10px rgba(20, 24, 38, 0.06);
 }
 
 .tools-title {
@@ -297,5 +410,23 @@ defineExpose({ refresh: load })
   padding: 30px;
   color: var(--text-muted);
   font-size: 14px;
+}
+
+.archive-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-basis: 100%;
+}
+
+.archive-textarea {
+  resize: vertical;
+  min-height: 44px;
+}
+
+.archive-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>

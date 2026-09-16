@@ -4,10 +4,11 @@ import ru.heatmap.registry.domain.AppUser
 import org.springframework.security.core.GrantedAuthority
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.userdetails.UserDetails
+import java.util.UUID
 
 class UserPrincipal(private val user: AppUser) : UserDetails {
 
-    val id: Long get() = user.id!!
+    val id: UUID get() = user.id!!
     val role: String get() = user.role.name
 
     override fun getAuthorities(): Collection<GrantedAuthority> =

@@ -1,13 +1,14 @@
 package ru.heatmap.registry.domain
 
 import jakarta.persistence.*
+import java.util.UUID
 
 @Entity
 @Table(name = "impact_row")
 class ImpactRow(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
+    @GeneratedValue(strategy = GenerationType.UUID)
+    var id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "block_id", nullable = false)

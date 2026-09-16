@@ -9,6 +9,7 @@ import ru.heatmap.registry.web.NotFoundException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 @Service
 class ImpactService(
@@ -32,7 +33,7 @@ class ImpactService(
         }
 
     @Transactional
-    fun updateRowValue(rowId: Long, request: UpdateImpactRowRequest): ImpactRowResponse {
+    fun updateRowValue(rowId: UUID, request: UpdateImpactRowRequest): ImpactRowResponse {
         val row = impactRowRepository.findByIdOrNull(rowId) ?: throw NotFoundException("Строка метрики не найдена")
         row.value = request.value.trim()
         val saved = impactRowRepository.save(row)

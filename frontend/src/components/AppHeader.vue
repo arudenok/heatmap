@@ -35,7 +35,8 @@ const notifMeta = {
   NEW_SUBMISSION: { icon: 'inbox' },
   SUBMISSION_APPROVED: { icon: 'check' },
   SUBMISSION_REJECTED: { icon: 'x' },
-  NEW_TOOL_NOTE: { icon: 'note' }
+  NEW_TOOL_NOTE: { icon: 'note' },
+  TOOL_ARCHIVED: { icon: 'archive' }
 }
 
 // Счётчик заявок, ждущих модерации - виден админу рядом со ссылкой "Администрирование"

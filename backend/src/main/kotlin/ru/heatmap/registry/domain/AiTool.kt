@@ -2,13 +2,14 @@ package ru.heatmap.registry.domain
 
 import jakarta.persistence.*
 import java.time.Instant
+import java.util.UUID
 
 @Entity
 @Table(name = "ai_tool")
 class AiTool(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
+    @GeneratedValue(strategy = GenerationType.UUID)
+    var id: UUID? = null,
 
     @Column(nullable = false)
     var name: String,
@@ -87,5 +88,5 @@ enum class ToolStage {
 }
 
 enum class ToolStatus {
-    PENDING, PUBLISHED, REJECTED
+    PENDING, PUBLISHED, REJECTED, ARCHIVED
 }

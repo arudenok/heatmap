@@ -8,12 +8,13 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 import java.time.Instant
+import java.util.UUID
 
 private const val URL_PATTERN = "^https?://.+"
 private const val URL_MESSAGE = "Введите ссылку на инструмент (начинается с http:// или https://)"
 
 data class ToolResponse(
-    val id: Long,
+    val id: UUID,
     val name: String,
     val description: String,
     val stage: String,
@@ -42,6 +43,13 @@ data class RejectToolRequest(
     @field:NotBlank(message = "Укажите причину отклонения")
     @field:Size(max = 1000)
     val reason: String
+)
+
+// Комментарий необязателен - в отличие от отклонения заявки, где причина обязательна,
+// администратор может архивировать инструмент и без пояснения.
+data class ArchiveToolRequest(
+    @field:Size(max = 1000)
+    val reason: String? = null
 )
 
 data class RateToolRequest(
@@ -121,6 +129,5 @@ data class StatsResponse(
     val newThisWeek: Long,
     val accessCount: Long,
     val usageCount: Long,
-    val standardCount: Long,
-    val avgEfficiency: Int
+    val standardCount: Long
 )

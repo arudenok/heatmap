@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.Date
 import java.util.Base64
+import java.util.UUID
 import javax.crypto.SecretKey
 
 @Component
@@ -17,13 +18,13 @@ class JwtService(private val jwtProperties: JwtProperties) {
         Keys.hmacShaKeyFor(keyBytes)
     }
 
-    fun generateToken(username: String, role: String, userId: Long): String {
+    fun generateToken(username: String, role: String, userId: UUID): String {
         val now = Instant.now()
         val expiry = now.plusSeconds(jwtProperties.accessTokenTtlMinutes * 60)
         return Jwts.builder()
             .subject(username)
             .claim("role", role)
-            .claim("uid", userId)
+            .claim("uid", userId.toString())
             .issuedAt(Date.from(now))
             .expiration(Date.from(expiry))
             .signWith(signingKey)

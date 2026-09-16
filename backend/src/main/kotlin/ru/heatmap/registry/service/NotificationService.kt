@@ -14,6 +14,7 @@ import ru.heatmap.registry.web.NotFoundException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 @Service
 class NotificationService(
@@ -42,7 +43,7 @@ class NotificationService(
      * (кроме автора самой заметки, ему уведомление о собственной записи не нужно).
      */
     @Transactional
-    fun notifyAdminsOfNewNote(tool: AiTool, authorId: Long) {
+    fun notifyAdminsOfNewNote(tool: AiTool, authorId: UUID) {
         val admins = appUserRepository.findByRole(Role.ADMIN).filter { it.id != authorId }
         admins.forEach { admin ->
             notificationRepository.save(
@@ -54,6 +55,25 @@ class NotificationService(
                 )
             )
         }
+    }
+
+    /**
+     * Администратор архивировал уже опубликованный инструмент - уведомляем автора, если он
+     * известен (не удалён). Комментарий необязателен (см. ArchiveToolRequest) - в отличие от
+     * отклонения заявки, где причина обязательна.
+     */
+    @Transactional
+    fun notifyOwnerOfArchive(tool: AiTool, reason: String?) {
+        val owner = tool.createdBy ?: return
+        notificationRepository.save(
+            Notification(
+                user = owner,
+                type = NotificationType.TOOL_ARCHIVED,
+                toolId = tool.id,
+                toolName = tool.name,
+                reason = reason
+            )
+        )
     }
 
     /** Заявку одобрили или отклонили - уведомляем автора, если он известен (не удалён). */
@@ -80,7 +100,7 @@ class NotificationService(
         notificationRepository.countByUserIdAndReadFalse(principal.id)
 
     @Transactional
-    fun markRead(id: Long, principal: UserPrincipal) {
+    fun markRead(id: UUID, principal: UserPrincipal) {
         val notification = notificationRepository.findByIdOrNull(id) ?: throw NotFoundException("Уведомление не найдено")
         if (notification.user.id != principal.id) {
             throw ForbiddenException("Недостаточно прав для этого уведомления")
@@ -115,5 +135,8 @@ class NotificationService(
             if (!reason.isNullOrBlank()) "Ваша заявка «$toolName» отклонена модератором: $reason"
             else "Ваша заявка «$toolName» отклонена модератором"
         NotificationType.NEW_TOOL_NOTE -> "Новая заметка к инструменту «$toolName»"
+        NotificationType.TOOL_ARCHIVED ->
+            if (!reason.isNullOrBlank()) "Ваш инструмент «$toolName» архивирован администратором: $reason"
+            else "Ваш инструмент «$toolName» архивирован администратором"
     }
 }

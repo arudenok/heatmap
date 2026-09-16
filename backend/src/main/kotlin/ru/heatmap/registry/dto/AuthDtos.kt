@@ -3,6 +3,7 @@ package ru.heatmap.registry.dto
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
+import java.util.UUID
 
 data class RegisterRequest(
     @field:NotBlank(message = "Введите логин Сигма")
@@ -32,7 +33,7 @@ data class AuthResponse(
 )
 
 data class MeResponse(
-    val id: Long,
+    val id: UUID,
     val username: String,
     val fullName: String,
     val role: String

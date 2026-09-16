@@ -2,14 +2,15 @@ package ru.heatmap.registry.repository
 
 import ru.heatmap.registry.domain.ToolNote
 import org.springframework.data.jpa.repository.JpaRepository
+import java.util.UUID
 
-interface ToolNoteRepository : JpaRepository<ToolNote, Long> {
-    fun findByToolIdOrderByCreatedAtAsc(toolId: Long): List<ToolNote>
+interface ToolNoteRepository : JpaRepository<ToolNote, UUID> {
+    fun findByToolIdOrderByCreatedAtAsc(toolId: UUID): List<ToolNote>
 
     // Для бейджа с количеством заметок на кнопке "Заметки" (список инструментов, модерация).
-    fun countByToolId(toolId: Long): Long
+    fun countByToolId(toolId: UUID): Long
 
     // Нужно при удалении пользователя администратором - иначе FK author_id в tool_note
     // помешает удалить саму запись app_user (см. AdminUserService.delete).
-    fun deleteAllByAuthorId(authorId: Long)
+    fun deleteAllByAuthorId(authorId: UUID)
 }
