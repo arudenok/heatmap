@@ -17,7 +17,19 @@ const form = ref({
 const loading = ref(false)
 const error = ref('')
 
+// Минимум 3 символа - для всех полей формы регистрации (у пароля/подтверждения порог
+// и так строже - 6 символов, см. проверку ниже и minlength="6" в шаблоне).
+const MIN_FIELD_LENGTH = 3
+
 function validate() {
+  if (form.value.fullName.trim().length < MIN_FIELD_LENGTH) {
+    error.value = `ФИО должно быть не короче ${MIN_FIELD_LENGTH} символов`
+    return false
+  }
+  if (form.value.username.trim().length < MIN_FIELD_LENGTH) {
+    error.value = `Логин Сигма должен быть не короче ${MIN_FIELD_LENGTH} символов`
+    return false
+  }
   if (form.value.password.length < 6) {
     error.value = 'Пароль должен быть не короче 6 символов'
     return false
@@ -68,7 +80,7 @@ async function onSubmit() {
       <form class="auth-form" @submit.prevent="onSubmit">
         <div class="field">
           <label for="fullName">ФИО</label>
-          <input id="fullName" v-model="form.fullName" class="input" type="text" required />
+          <input id="fullName" v-model="form.fullName" class="input" type="text" minlength="3" required />
         </div>
         <div class="field">
           <label for="username">Логин Сигма</label>
@@ -79,6 +91,7 @@ async function onSubmit() {
             type="text"
             inputmode="numeric"
             pattern="[0-9]+"
+            minlength="3"
             title="Только цифры"
             placeholder="Только цифры"
             required

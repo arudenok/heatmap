@@ -20,6 +20,12 @@ class AiTool(
     @Column(nullable = false)
     var description: String,
 
+    // Краткое описание - необязательное, 1-2 предложения. Показывается на карточке инструмента
+    // вместо (обрезанного) полного описания; полное всегда доступно по кнопке "Подробное описание"
+    // в модалке (см. ToolDetailModal). Если не заполнено - на карточке используется description.
+    @Column(name = "short_description", length = 300)
+    var shortDescription: String? = null,
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     var stage: ToolStage = ToolStage.ACCESS,
@@ -28,20 +34,24 @@ class AiTool(
     @Column(nullable = false, length = 16)
     var status: ToolStatus = ToolStatus.PENDING,
 
-    // Роль и сегмент - множественные (инструмент может относиться сразу к нескольким).
+    // Роль - множественная (инструмент может относиться сразу к нескольким).
     // ElementCollection - потому что это просто набор строк, отдельная сущность не нужна.
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "tool_role", joinColumns = [JoinColumn(name = "tool_id")])
     @Column(name = "role", nullable = false, length = 64)
     var roles: MutableSet<String> = mutableSetOf(),
 
-    @Column(nullable = false, length = 64)
-    var framework: String,
+    // Необязательное поле (раньше было обязательным) - не у каждого инструмента есть
+    // выраженный агентский фреймворк.
+    @Column(length = 64)
+    var framework: String? = null,
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "tool_segment", joinColumns = [JoinColumn(name = "tool_id")])
-    @Column(name = "segment", nullable = false, length = 64)
-    var segments: MutableSet<String> = mutableSetOf(),
+    // Ограничения - свободный текст с автодополнением на фронтенде (см. FilterOptionsResponse.constraints),
+    // необязательное поле. Пришло на смену полю "Сегмент" (см. историю - убрано полностью по просьбе).
+    // Колонка называется tool_constraints, а не constraints - это слово зарезервировано в SQL
+    // (используется в конструкции SET CONSTRAINTS), безопаснее не рисковать с движком БД.
+    @Column(name = "tool_constraints", length = 500)
+    var constraints: String? = null,
 
     @Column(name = "source_label", nullable = false, length = 128)
     var sourceLabel: String,
@@ -66,6 +76,13 @@ class AiTool(
 
     @Column(name = "ratings_count", nullable = false)
     var ratingsCount: Int = 0,
+
+    // Новое поле "Сегмент" - не то же самое, что историческое поле "Сегмент" (см. комментарий
+    // у constraints выше - то было убрано полностью и заменено "Ограничениями"). Это отдельное,
+    // видно и редактируется только администратором (обычно при рассмотрении заявки на модерации),
+    // поэтому колонка называется admin_segment.
+    @Column(name = "admin_segment", length = 128)
+    var segment: String? = null,
 
     // Причина отклонения - заполняется администратором при отклонении заявки,
     // показывается автору, сбрасывается при одобрении и при новой отправке на модерацию.

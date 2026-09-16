@@ -34,7 +34,6 @@ class ToolService(
         tab: String,
         roles: List<String>?,
         framework: String?,
-        segments: List<String>?,
         search: String?,
         sort: String?,
         principal: UserPrincipal?
@@ -47,7 +46,6 @@ class ToolService(
             tabSpec(tab, topIds),
             collectionContainsAnySpec("roles", roles),
             equalsSpec("framework", framework),
-            collectionContainsAnySpec("segments", segments),
             searchSpec(search)
         ).fold(Specification.where<AiTool>(null)) { acc, next -> acc.and(next) }
         return aiToolRepository.findAll(spec, resolveSort(sort)).map { it.toResponse(principal, topIds) }
@@ -132,8 +130,11 @@ class ToolService(
         val all = aiToolRepository.findAll()
         return FilterOptionsResponse(
             roles = all.flatMap { it.roles }.distinct().sorted(),
-            frameworks = all.map { it.framework }.distinct().sorted(),
-            segments = all.flatMap { it.segments }.distinct().sorted()
+            // Фреймворк теперь необязателен - как и "Ограничения", в список автодополнения/фильтра
+            // попадают только реально заполненные значения.
+            frameworks = all.mapNotNull { it.framework }.filter { it.isNotBlank() }.distinct().sorted(),
+            // Подсказки для автодополнения - только ранее реально введённые значения, без пустых.
+            constraints = all.mapNotNull { it.constraints }.filter { it.isNotBlank() }.distinct().sorted()
         )
     }
 
@@ -145,21 +146,47 @@ class ToolService(
     @Transactional
     fun create(request: CreateToolRequest, principal: UserPrincipal): ToolResponse {
         val owner = appUserRepository.findByIdOrNull(principal.id) ?: throw NotFoundException("Пользователь не найден")
+        val isAdmin = principal.role == "ADMIN"
+
+        // Обычный пользователь всегда создаёт заявку на модерацию с этапом Access - stage/status
+        // из запроса ему не доступны. Администратор может сразу выставить этап и статус
+        // ("На модерации" или "Опубликован" - ответ на уточняющий вопрос при постановке задачи).
+        val stage = if (isAdmin) {
+            request.stage?.let { parseEnum<ToolStage>(it, "этап") } ?: ToolStage.ACCESS
+        } else {
+            ToolStage.ACCESS
+        }
+        val status = if (isAdmin) {
+            val requested = request.status?.let { parseEnum<ToolStatus>(it, "статус") } ?: ToolStatus.PENDING
+            if (requested != ToolStatus.PENDING && requested != ToolStatus.PUBLISHED) {
+                throw BadRequestException("При создании можно выставить только статус \"На модерации\" или \"Опубликован\"")
+            }
+            requested
+        } else {
+            ToolStatus.PENDING
+        }
+
         val tool = AiTool(
             name = request.name.trim(),
             description = request.description.trim(),
-            stage = ToolStage.ACCESS,
-            status = ToolStatus.PENDING,
+            shortDescription = request.shortDescription?.trim()?.takeIf { it.isNotBlank() },
+            stage = stage,
+            status = status,
             roles = request.roles.toMutableSet(),
-            framework = request.framework,
-            segments = request.segments.toMutableSet(),
+            framework = request.framework?.trim()?.takeIf { it.isNotBlank() },
+            constraints = request.constraints?.trim()?.takeIf { it.isNotBlank() },
             sourceLabel = request.sourceLabel,
             ownerName = owner.fullName,
             createdBy = owner
         )
-        // Новый инструмент всегда PENDING - в число опубликованных топ-инструментов попасть не может.
         val saved = aiToolRepository.save(tool)
-        notificationService.notifyAdminsOfNewSubmission(saved)
+        // Если администратор публикует инструмент сразу (минуя модерацию) или прямо выставляет
+        // "На модерации" вручную - это не обычная заявка, уведомлять администраторов не нужно
+        // только когда инструмент опубликован сразу; в остальных случаях (обычный пользователь,
+        // либо админ явно оставил "На модерации") заявка всё равно ждёт рассмотрения.
+        if (saved.status == ToolStatus.PENDING) {
+            notificationService.notifyAdminsOfNewSubmission(saved)
+        }
         return saved.toResponse(principal, emptySet())
     }
 
@@ -178,9 +205,12 @@ class ToolService(
 
         request.name?.let { tool.name = it.trim() }
         request.description?.let { tool.description = it.trim() }
+        request.shortDescription?.let { tool.shortDescription = it.trim().takeIf { s -> s.isNotBlank() } }
         request.roles?.let { tool.roles = it.toMutableSet() }
-        request.framework?.let { tool.framework = it }
-        request.segments?.let { tool.segments = it.toMutableSet() }
+        // Фреймворк необязателен - как и "Ограничения" выше, пустая строка сохраняется как null
+        // (см. AiTool.framework / CreateToolRequest.framework).
+        request.framework?.let { tool.framework = it.trim().takeIf { s -> s.isNotBlank() } }
+        request.constraints?.let { tool.constraints = it.trim().takeIf { s -> s.isNotBlank() } }
         request.sourceLabel?.let { tool.sourceLabel = it }
 
         if (isAdmin) {
@@ -190,6 +220,7 @@ class ToolService(
             request.dau?.let { tool.dau = it }
             request.efficiencyPct?.let { tool.efficiencyPct = it }
             // "Топ" больше нельзя выставить вручную - плашка присваивается автоматически (см. computeTopIds).
+            request.segment?.let { tool.segment = it.trim().takeIf { s -> s.isNotBlank() } }
         } else if (wasPublishedOrRejected) {
             // Автор отредактировал уже опубликованный или отклонённый инструмент -
             // отправляем его на повторную модерацию и сбрасываем прежнюю причину отклонения.
@@ -361,7 +392,7 @@ class ToolService(
     private fun equalsSpec(field: String, value: String?): Specification<AiTool>? =
         if (value.isNullOrBlank()) null else Specification { root, _, cb -> cb.equal(root.get<String>(field), value) }
 
-    /** "Содержит хотя бы одно из значений" - для полей role/segment, которые теперь коллекции. */
+    /** "Содержит хотя бы одно из значений" - для поля role, которое является коллекцией. */
     private fun collectionContainsAnySpec(field: String, values: List<String>?): Specification<AiTool>? {
         val cleaned = values?.filter { it.isNotBlank() }
         if (cleaned.isNullOrEmpty()) return null
@@ -393,11 +424,12 @@ class ToolService(
             id = this.id!!,
             name = this.name,
             description = this.description,
+            shortDescription = this.shortDescription,
             stage = this.stage.name,
             status = this.status.name,
             roles = this.roles.toList().sorted(),
             framework = this.framework,
-            segments = this.segments.toList().sorted(),
+            constraints = this.constraints,
             sourceLabel = this.sourceLabel,
             ownerName = this.ownerName,
             downloads = this.downloads,
@@ -411,6 +443,8 @@ class ToolService(
             canManage = canManage,
             rejectionReason = this.rejectionReason,
             notesCount = notesCount,
+            // Как и заметки - видно только администратору (см. AiTool.segment).
+            segment = if (principal?.role == "ADMIN") this.segment else null,
             createdAt = this.createdAt,
             updatedAt = this.updatedAt
         )

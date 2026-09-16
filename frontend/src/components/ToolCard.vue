@@ -30,11 +30,14 @@ const statusMeta = {
   REJECTED: { label: 'Отклонён', class: 'badge-danger' }
 }
 
-// Описание может быть очень объёмным - на карточке показываем только первые ~100 символов,
-// полный текст доступен по клику на карточку (модалка "Подробнее").
+// На карточке показываем краткое описание (если автор его заполнил) - оно короче и
+// читается быстрее, чем обрезанное полное. Полный текст всегда доступен по клику на
+// карточку (модалка "Подробнее" - там же кнопка "Подробное описание"). Если краткое
+// описание не заполнено - как и раньше, обрезаем полное до ~100 символов.
 const DESCRIPTION_LIMIT = 100
 
-function truncatedDescription(tool) {
+function cardDescription(tool) {
+  if (tool.shortDescription) return tool.shortDescription
   const text = tool.description || ''
   if (text.length <= DESCRIPTION_LIMIT) return text
   return `${text.slice(0, DESCRIPTION_LIMIT).trimEnd()}…`
@@ -64,9 +67,9 @@ function formatCompact(n) {
         <span v-if="showStatus" class="badge" :class="statusMeta[tool.status]?.class">{{ statusMeta[tool.status]?.label }}</span>
       </div>
       <div class="tool-desc">
-        <span class="tool-desc-text" :title="tool.description">{{ truncatedDescription(tool) }}</span>
+        <span class="tool-desc-text" :title="tool.description">{{ cardDescription(tool) }}</span>
         <span v-for="r in tool.roles" :key="r" class="tag">{{ r }}</span>
-        <span class="tag">{{ tool.framework }}</span>
+        <span v-if="tool.framework" class="tag">{{ tool.framework }}</span>
       </div>
       <div class="tool-meta">
         <span><IconBase name="user" :size="13" /> {{ tool.ownerName }}</span>

@@ -3,7 +3,7 @@ import IconBase from './IconBase.vue'
 import MultiSelectDropdown from './MultiSelectDropdown.vue'
 
 const props = defineProps({
-  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], segments: [] }) },
+  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], constraints: [] }) },
   resultCount: { type: Number, default: 0 }
 })
 
@@ -11,7 +11,6 @@ const emit = defineEmits(['reset'])
 
 const role = defineModel('role', { default: () => [] })
 const framework = defineModel('framework', { default: '' })
-const segment = defineModel('segment', { default: () => [] })
 const search = defineModel('search', { default: '' })
 </script>
 
@@ -28,11 +27,6 @@ const search = defineModel('search', { default: '' })
         <option value="">Все</option>
         <option v-for="opt in filterOptions.frameworks" :key="opt" :value="opt">{{ opt }}</option>
       </select>
-    </div>
-
-    <div class="filter-group">
-      <label>Сегмент</label>
-      <MultiSelectDropdown v-model="segment" :options="filterOptions.segments" all-label="Для всех" />
     </div>
 
     <div class="filter-group filter-search">

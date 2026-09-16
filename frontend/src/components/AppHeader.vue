@@ -6,6 +6,7 @@ import api from '../services/api'
 import IconBase from './IconBase.vue'
 import EditProfileModal from './EditProfileModal.vue'
 import MyDownloadsModal from './MyDownloadsModal.vue'
+import ToolNotesModal from './ToolNotesModal.vue'
 import { getEffectiveTheme, toggleTheme } from '../utils/theme'
 
 const auth = useAuthStore()
@@ -63,6 +64,23 @@ async function loadUnreadCount() {
   }
 }
 
+// Роль (и остальные данные профиля) другого пользователя администратор может изменить в
+// любой момент, пока тот уже находится в открытой сессии (см. AdminUsersPanel.toggleRole) -
+// без периодического обновления собственных данных пользователя изменение роли применится
+// только на бэкенде (JwtAuthenticationFilter каждый раз читает роль из БД заново), а кнопки
+// администратора в интерфейсе останутся видны/скрыты по старой роли до перезахода. Опрос по
+// тому же интервалу, что и уведомления/счётчик модерации, устраняет эту рассинхронизацию
+// в обе стороны без необходимости перелогиниваться. 401 (например, аккаунт заблокировали)
+// обработает общий интерцептор api.js - он и так разлогинивает при истёкшем/невалидном токене.
+async function refreshOwnRole() {
+  if (!auth.isAuthenticated) return
+  try {
+    await auth.refreshMe()
+  } catch {
+    // молча - не критично для остального функционала, следующий опрос повторит попытку
+  }
+}
+
 async function loadNotifications() {
   notifLoading.value = true
   try {
@@ -83,6 +101,13 @@ function toggleNotifications() {
   }
 }
 
+// Заметки, открытые из уведомления - отдельная модалка поверх текущей страницы (см. ниже),
+// а не переход в раздел администрирования: там пришлось бы ещё раз искать нужный инструмент
+// и нажимать "Заметки" вручную. Работает одинаково для непрочитанных и уже прочитанных
+// уведомлений - переход не зависит от того, отмечали мы уведомление прочитанным выше или нет.
+const notesModalOpen = ref(false)
+const notesModalTool = ref(null)
+
 async function onNotificationClick(notification) {
   if (!notification.read) {
     try {
@@ -93,9 +118,16 @@ async function onNotificationClick(notification) {
       // не критично - просто оставляем непрочитанным
     }
   }
-  // Новую заявку или новую заметку коллеги-администратора удобно сразу открыть на странице администрирования.
-  if ((notification.type === 'NEW_SUBMISSION' || notification.type === 'NEW_TOOL_NOTE') && auth.isAdmin) {
-    notifOpen.value = false
+  notifOpen.value = false
+
+  if (notification.type === 'NEW_TOOL_NOTE' && auth.isAdmin) {
+    notesModalTool.value = { id: notification.toolId, name: notification.toolName }
+    notesModalOpen.value = true
+    return
+  }
+
+  // Новую заявку удобно сразу открыть на странице администрирования (вкладка "Модерация" по умолчанию).
+  if (notification.type === 'NEW_SUBMISSION' && auth.isAdmin) {
     router.push('/admin')
   }
 }
@@ -125,6 +157,7 @@ watch(
     if (isAuth) {
       loadUnreadCount()
       loadPendingModerationCount()
+      refreshOwnRole()
     } else {
       notifications.value = []
       unreadCount.value = 0
@@ -137,12 +170,16 @@ watch(
 onMounted(() => {
   loadUnreadCount()
   loadPendingModerationCount()
-  // Периодически обновляем счётчики - без полноценных веб-сокетов
-  // этого достаточно, чтобы бейджи не "залипали" надолго.
+  refreshOwnRole()
+  // Периодически обновляем счётчики и собственную роль - без полноценных веб-сокетов этого
+  // достаточно, чтобы бейджи не "залипали" надолго и админ-элементы не путались со старой
+  // ролью после того, как её изменили в другой сессии (см. refreshOwnRole выше). Раньше был
+  // опрос раз в 20с - ощущалось как слишком частое "мигание" уведомлений, поэтому интервал увеличен.
   pollHandle = setInterval(() => {
     loadUnreadCount()
     loadPendingModerationCount()
-  }, 20000)
+    refreshOwnRole()
+  }, 60000)
 })
 
 onUnmounted(() => {
@@ -316,6 +353,7 @@ const vClickOutside = {
 
     <EditProfileModal v-model="profileOpen" />
     <MyDownloadsModal v-model="myDownloadsOpen" />
+    <ToolNotesModal v-model="notesModalOpen" :tool="notesModalTool" />
   </header>
 </template>
 

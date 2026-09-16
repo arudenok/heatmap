@@ -10,18 +10,25 @@ import jakarta.validation.constraints.Size
 import java.time.Instant
 import java.util.UUID
 
-private const val URL_PATTERN = "^https?://.+"
-private const val URL_MESSAGE = "Введите ссылку на инструмент (начинается с http:// или https://)"
+// Ссылка на инструмент должна вести на один из внутренних корпоративных сервисов -
+// открытые ссылки на произвольные внешние сайты не принимаются. Токен должен начинать
+// доменную метку (после точки или сразу после схемы), а не просто где-то встречаться
+// в строке - иначе "https://evil.com/jira" тоже прошёл бы проверку.
+private const val URL_PATTERN =
+    "^(?i)https?://(?:[\\w-]+\\.)*(sc-ci|sbrf-bitbucket|stash|confluence|jira|mapp|sbertrack|onework)[\\w.-]*(?::\\d+)?(/.*)?$"
+private const val URL_MESSAGE =
+    "Ссылка должна вести на корпоративный сервис (sc-ci, sbrf-bitbucket, stash, confluence, jira, mapp, sbertrack, onework)"
 
 data class ToolResponse(
     val id: UUID,
     val name: String,
     val description: String,
+    val shortDescription: String?,
     val stage: String,
     val status: String,
     val roles: List<String>,
-    val framework: String,
-    val segments: List<String>,
+    val framework: String?,
+    val constraints: String?,
     val sourceLabel: String,
     val ownerName: String,
     val downloads: Int,
@@ -35,6 +42,9 @@ data class ToolResponse(
     val canManage: Boolean,
     val rejectionReason: String?,
     val notesCount: Long,
+    // Виден и редактируется только администратором (см. AiTool.segment) - для остальных
+    // ролей ToolService всегда отдаёт null, независимо от значения в базе.
+    val segment: String?,
     val createdAt: Instant,
     val updatedAt: Instant
 )
@@ -64,6 +74,11 @@ data class CreateToolRequest(
     @field:Size(max = 255)
     val name: String,
 
+    // Краткое описание - необязательное, показывается на карточках вместо обрезанного
+    // полного описания (см. AiTool.shortDescription).
+    @field:Size(max = 300, message = "Не более 300 символов")
+    val shortDescription: String? = null,
+
     // Ограничения по длине нет - полный текст всегда доступен в модалке "Подробнее".
     @field:NotBlank(message = "Введите описание")
     val description: String,
@@ -71,15 +86,21 @@ data class CreateToolRequest(
     @field:NotEmpty(message = "Выберите хотя бы одну роль")
     val roles: List<String>,
 
-    @field:NotBlank
-    val framework: String,
+    // Необязательное поле (раньше было обязательным) - не у каждого инструмента есть
+    // выраженный агентский фреймворк.
+    val framework: String? = null,
 
-    @field:NotEmpty(message = "Выберите хотя бы один сегмент")
-    val segments: List<String>,
+    // Свободный текст с подсказками (см. FilterOptionsResponse.constraints) - необязателен.
+    val constraints: String? = null,
 
     @field:NotBlank(message = "Введите ссылку на инструмент")
     @field:Pattern(regexp = URL_PATTERN, message = URL_MESSAGE)
-    val sourceLabel: String
+    val sourceLabel: String,
+
+    // Доступно только администратору при создании (см. ToolService.create) - обычный
+    // пользователь всегда попадает на модерацию с этапом Access, что бы сюда ни передал.
+    val stage: String? = null,
+    val status: String? = null
 )
 
 data class UpdateToolRequest(
@@ -88,9 +109,12 @@ data class UpdateToolRequest(
 
     val description: String? = null,
 
+    @field:Size(max = 300, message = "Не более 300 символов")
+    val shortDescription: String? = null,
+
     val roles: List<String>? = null,
     val framework: String? = null,
-    val segments: List<String>? = null,
+    val constraints: String? = null,
 
     @field:Pattern(regexp = URL_PATTERN, message = URL_MESSAGE)
     val sourceLabel: String? = null,
@@ -104,9 +128,15 @@ data class UpdateToolRequest(
     val dau: Int? = null,
 
     @field:Min(0) @field:Max(100)
-    val efficiencyPct: Int? = null
+    val efficiencyPct: Int? = null,
     // "Топ" больше нельзя выставить вручную - плашка присваивается автоматически по оценкам,
     // просмотрам и скачиваниям (не более 3% опубликованных инструментов).
+
+    // Новое поле "Сегмент" - видно и редактируется только администратором (обычно на
+    // экране модерации), см. AiTool.segment. Игнорируется, если запрос шлёт не админ
+    // (см. ToolService.update - применяется только внутри блока isAdmin).
+    @field:Size(max = 128, message = "Не более 128 символов")
+    val segment: String? = null
 )
 
 data class ToolCountsResponse(
@@ -121,7 +151,9 @@ data class ToolCountsResponse(
 data class FilterOptionsResponse(
     val roles: List<String>,
     val frameworks: List<String>,
-    val segments: List<String>
+    // Подсказки для автодополнения поля "Ограничения" (свободный текст, не мультиселект,
+    // поэтому это не фильтр, а просто список ранее введённых значений).
+    val constraints: List<String>
 )
 
 data class StatsResponse(

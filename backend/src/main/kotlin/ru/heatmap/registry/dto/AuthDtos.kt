@@ -8,6 +8,7 @@ import java.util.UUID
 data class RegisterRequest(
     @field:NotBlank(message = "Введите логин Сигма")
     @field:Pattern(regexp = "^[0-9]+$", message = "Логин Сигма должен содержать только цифры")
+    @field:Size(min = 3, max = 255, message = "Логин Сигма должен быть не короче 3 символов")
     val username: String,
 
     @field:NotBlank(message = "Введите пароль")
@@ -15,7 +16,7 @@ data class RegisterRequest(
     val password: String,
 
     @field:NotBlank(message = "Введите ФИО")
-    @field:Size(max = 255)
+    @field:Size(min = 3, max = 255, message = "ФИО должно быть не короче 3 символов")
     val fullName: String
 )
 

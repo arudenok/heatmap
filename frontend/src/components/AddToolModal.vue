@@ -9,7 +9,7 @@ import ComboboxInput from './ComboboxInput.vue'
 const auth = useAuthStore()
 
 const props = defineProps({
-  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], segments: [] }) },
+  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], constraints: [] }) },
   // Если передан - модалка работает в режиме редактирования уже существующей заявки
   // (PATCH вместо POST), а не создания новой.
   editTool: { type: Object, default: null }
@@ -30,13 +30,47 @@ const isResubmitEdit = computed(
     (props.editTool?.status === 'PUBLISHED' || props.editTool?.status === 'REJECTED')
 )
 
+// Этап зрелости и статус в форме создания доступны только администратору (см. admin-params-box
+// в шаблоне) - обычный пользователь всегда попадает на Access/PENDING (см. ToolService.create).
+// Статус при создании намеренно ограничен "На модерации"/"Опубликован" - остальные значения
+// (REJECTED/ARCHIVED) не имеют смысла для только что создаваемого инструмента. При редактировании
+// же администратору доступны все статусы и метрики влияния (см. admin-params-box и ToolService.update -
+// там ограничения на статус нет).
+const STAGE_OPTIONS = [
+  { value: 'ACCESS', label: 'Access' },
+  { value: 'USAGE', label: 'Usage' },
+  { value: 'HABIT', label: 'Habit' },
+  { value: 'STANDARD', label: 'Process Standard' }
+]
+const STATUS_OPTIONS = [
+  { value: 'PENDING', label: 'На модерации' },
+  { value: 'PUBLISHED', label: 'Опубликован' }
+]
+const STATUS_OPTIONS_EDIT = [
+  ...STATUS_OPTIONS,
+  { value: 'REJECTED', label: 'Отклонён' },
+  { value: 'ARCHIVED', label: 'Архивирован' }
+]
+const statusOptions = computed(() => (isEditMode.value ? STATUS_OPTIONS_EDIT : STATUS_OPTIONS))
+
 const form = reactive({
   name: '',
+  shortDescription: '',
   description: '',
   roles: [],
   framework: '',
-  segments: [],
-  sourceLabel: ''
+  constraints: '',
+  sourceLabel: '',
+  stage: 'ACCESS',
+  status: 'PENDING',
+  // Метрики влияния - редактируются администратором только при редактировании уже существующего
+  // инструмента (см. admin-params-box), у только что создаваемого они всегда нулевые/не заданы.
+  downloads: 0,
+  dau: '',
+  efficiencyPct: 0,
+  // Новое поле "Сегмент" - видно и редактируется только администратором, обычно на модерации
+  // (см. admin-params-box) - как и метрики выше, доступно только при редактировании.
+  segment: ''
 })
 
 const loading = ref(false)
@@ -49,11 +83,21 @@ watch(
     if (!isOpen) return
     if (tool) {
       form.name = tool.name
+      form.shortDescription = tool.shortDescription || ''
       form.description = tool.description
       form.roles = [...tool.roles]
-      form.framework = tool.framework
-      form.segments = [...tool.segments]
+      form.framework = tool.framework || ''
+      form.constraints = tool.constraints || ''
       form.sourceLabel = tool.sourceLabel
+      // Этап/статус/метрики - только для отображения и редактирования администратором
+      // (см. admin-params-box), но подставляем их независимо от роли - не отправятся,
+      // если auth.isAdmin === false (см. onSubmit).
+      form.stage = tool.stage
+      form.status = tool.status
+      form.downloads = tool.downloads
+      form.dau = tool.dau ?? ''
+      form.efficiencyPct = tool.efficiencyPct
+      form.segment = tool.segment || ''
     } else {
       resetForm()
     }
@@ -62,16 +106,22 @@ watch(
 )
 
 // Незаполненные/некорректные обязательные поля подсвечиваются красным при попытке отправки.
+// Краткое описание и ограничения необязательны, поэтому в этот список не входят.
 const invalidFields = reactive({
   name: false,
   description: false,
   roles: false,
-  framework: false,
-  segments: false,
   sourceLabel: false
 })
 
-const URL_PATTERN = /^https?:\/\/.+/i
+// Ссылка на инструмент принимается только с внутренних корпоративных сервисов (см. тот же
+// список и комментарий на бэкенде - ToolDtos.kt/URL_PATTERN). Токен должен начинать доменную
+// метку (после точки или сразу после схемы), а не просто где-то встречаться в строке.
+const ALLOWED_SOURCE_HOSTS = ['sc-ci', 'sbrf-bitbucket', 'stash', 'confluence', 'jira', 'mapp', 'sbertrack', 'onework']
+const URL_PATTERN = new RegExp(
+  `^https?://(?:[\\w-]+\\.)*(${ALLOWED_SOURCE_HOSTS.join('|')})[\\w.-]*(?::\\d+)?(/.*)?$`,
+  'i'
+)
 
 function clearFieldError(field) {
   invalidFields[field] = false
@@ -84,11 +134,18 @@ function close() {
 
 function resetForm() {
   form.name = ''
+  form.shortDescription = ''
   form.description = ''
   form.roles = []
   form.framework = ''
-  form.segments = []
+  form.constraints = ''
   form.sourceLabel = ''
+  form.stage = 'ACCESS'
+  form.status = 'PENDING'
+  form.downloads = 0
+  form.dau = ''
+  form.efficiencyPct = 0
+  form.segment = ''
   Object.keys(invalidFields).forEach((key) => (invalidFields[key] = false))
 }
 
@@ -100,16 +157,12 @@ function validate() {
   invalidFields.name = !form.name.trim()
   invalidFields.description = !form.description.trim()
   invalidFields.roles = !form.roles.length
-  invalidFields.framework = !form.framework.trim()
-  invalidFields.segments = !form.segments.length
   invalidFields.sourceLabel = sourceEmpty || sourceBadFormat
 
   const hasEmptyRequired =
     invalidFields.name ||
     invalidFields.description ||
     invalidFields.roles ||
-    invalidFields.framework ||
-    invalidFields.segments ||
     sourceEmpty
 
   if (hasEmptyRequired) {
@@ -117,7 +170,7 @@ function validate() {
     return false
   }
   if (sourceBadFormat) {
-    error.value = 'Ссылка на инструмент должна начинаться с http:// или https://'
+    error.value = `Ссылка должна вести на корпоративный сервис (${ALLOWED_SOURCE_HOSTS.join(', ')})`
     return false
   }
   return true
@@ -129,11 +182,35 @@ async function onSubmit() {
 
   loading.value = true
   try {
+    const payload = {
+      name: form.name,
+      shortDescription: form.shortDescription.trim() || null,
+      description: form.description,
+      roles: form.roles,
+      framework: form.framework.trim() || null,
+      constraints: form.constraints.trim() || null,
+      sourceLabel: form.sourceLabel
+    }
+    // "Параметры администратора" (этап/статус) отправляются и при создании, и при редактировании -
+    // при редактировании администратору дополнительно доступны метрики влияния (см. admin-params-box).
+    // CreateToolRequest не содержит полей downloads/dau/efficiencyPct - их отправляем только
+    // при редактировании, чтобы не посылать лишние поля при создании.
+    if (auth.isAdmin) {
+      payload.stage = form.stage
+      payload.status = form.status
+      if (isEditMode.value) {
+        payload.downloads = Number(form.downloads) || 0
+        payload.dau = form.dau === '' || form.dau === null ? null : Number(form.dau)
+        payload.efficiencyPct = Number(form.efficiencyPct) || 0
+        payload.segment = form.segment.trim() || null
+      }
+    }
+
     if (isEditMode.value) {
-      const { data } = await api.patch(`/tools/${props.editTool.id}`, { ...form })
+      const { data } = await api.patch(`/tools/${props.editTool.id}`, payload)
       emit('updated', data)
     } else {
-      const { data } = await api.post('/tools', { ...form })
+      const { data } = await api.post('/tools', payload)
       emit('created', data)
     }
     resetForm()
@@ -168,7 +245,9 @@ async function onSubmit() {
       <p v-if="isPendingEdit" class="modal-hint">Изменения сохранятся в заявке, которая всё ещё находится на модерации.</p>
       <p v-else-if="isResubmitEdit" class="modal-hint">Изменения отправят инструмент на повторную модерацию.</p>
       <p v-else-if="isEditMode" class="modal-hint">Изменения будут сохранены сразу, без повторной модерации.</p>
+      <p v-else-if="auth.isAdmin" class="modal-hint">Как администратор вы можете сразу указать этап и статус в блоке ниже - иначе заявка попадёт на этап <strong>Access</strong> и будет ждать модерации.</p>
       <p v-else class="modal-hint">Заявка попадёт на этап <strong>Access</strong> и будет опубликована после проверки администратором.</p>
+      <p v-if="isEditMode && auth.isAdmin" class="modal-hint">Полное редактирование инструмента - включая этап, статус и метрики влияния (блок ниже).</p>
 
       <form class="modal-form" @submit.prevent="onSubmit">
         <div class="field">
@@ -182,6 +261,18 @@ async function onSubmit() {
             maxlength="255"
             :placeholder="invalidFields.name ? 'Обязательное поле' : ''"
             @input="clearFieldError('name')"
+          />
+        </div>
+
+        <div class="field">
+          <label for="tool-short-desc">Краткое описание</label>
+          <input
+            id="tool-short-desc"
+            v-model="form.shortDescription"
+            class="input"
+            type="text"
+            maxlength="300"
+            placeholder="1-2 предложения для карточки инструмента (необязательно)"
           />
         </div>
 
@@ -207,32 +298,29 @@ async function onSubmit() {
               :options="filterOptions.roles"
               all-label="Выберите роли"
               :invalid="invalidFields.roles"
+              :allow-custom="auth.isAdmin"
               @update:model-value="clearFieldError('roles')"
             />
           </div>
           <div class="field">
-            <label for="tool-framework">Агентский фреймворк <span class="required">*</span></label>
+            <label for="tool-framework">Агентский фреймворк</label>
             <ComboboxInput
               id="tool-framework"
               v-model="form.framework"
               :options="filterOptions.frameworks"
-              :placeholder="invalidFields.framework ? 'Обязательное поле' : 'Выберите или введите своё'"
-              :invalid="invalidFields.framework"
-              @update:model-value="clearFieldError('framework')"
+              placeholder="Выберите или введите своё (необязательно)"
             />
           </div>
         </div>
 
         <div class="form-row">
           <div class="field">
-            <label for="tool-segment">Сегмент <span class="required">*</span></label>
-            <MultiSelectDropdown
-              id="tool-segment"
-              v-model="form.segments"
-              :options="filterOptions.segments"
-              all-label="Выберите сегменты"
-              :invalid="invalidFields.segments"
-              @update:model-value="clearFieldError('segments')"
+            <label for="tool-constraints">Ограничения</label>
+            <ComboboxInput
+              id="tool-constraints"
+              v-model="form.constraints"
+              :options="filterOptions.constraints"
+              placeholder="Например: только backend-сервисы (необязательно)"
             />
           </div>
           <div class="field">
@@ -245,6 +333,58 @@ async function onSubmit() {
               type="text"
               :placeholder="invalidFields.sourceLabel ? 'Обязательное поле' : 'https://…'"
               @input="clearFieldError('sourceLabel')"
+            />
+            <p class="field-hint">Только корпоративные сервисы: sc-ci, sbrf-bitbucket, stash, confluence, jira, mapp, sbertrack, onework</p>
+          </div>
+        </div>
+
+        <!-- Этап и статус доступны администратору и при создании, и при редактировании (см.
+             ToolService.create/update - у обычного пользователя они не показываются: при создании
+             всегда Access/PENDING, при редактировании статус меняется только через модерацию/архивацию).
+             Метрики влияния (скачивания/DAU/эффективность) редактируются только у уже существующего
+             инструмента - у только что создаваемого их взять неоткуда. -->
+        <div v-if="auth.isAdmin" class="admin-params-box">
+          <div class="admin-params-title"><IconBase name="shield" :size="13" /> Параметры администратора</div>
+          <div class="form-row">
+            <div class="field">
+              <label for="tool-stage">Этап зрелости</label>
+              <select id="tool-stage" v-model="form.stage" class="input">
+                <option v-for="opt in STAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="tool-status">Статус</label>
+              <select id="tool-status" v-model="form.status" class="input">
+                <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+          </div>
+          <div v-if="isEditMode" class="form-row">
+            <div class="field">
+              <label for="tool-downloads">Скачиваний</label>
+              <input id="tool-downloads" v-model.number="form.downloads" class="input" type="number" min="0" />
+            </div>
+            <div class="field">
+              <label for="tool-dau">DAU</label>
+              <input id="tool-dau" v-model="form.dau" class="input" type="number" min="0" placeholder="не задано" />
+            </div>
+          </div>
+          <div v-if="isEditMode" class="field">
+            <label for="tool-efficiency">Эффективность, %</label>
+            <input id="tool-efficiency" v-model.number="form.efficiencyPct" class="input" type="number" min="0" max="100" />
+          </div>
+          <!-- Отдельное поле "Сегмент" - не путать с "Ограничениями" выше (это разные поля,
+               см. комментарий в AiTool.kt/segment). Видно и заполняется только администратором,
+               обычно при рассмотрении заявки на модерации. -->
+          <div v-if="isEditMode" class="field">
+            <label for="tool-segment">Сегмент</label>
+            <input
+              id="tool-segment"
+              v-model="form.segment"
+              class="input"
+              type="text"
+              maxlength="128"
+              placeholder="Внутренняя пометка администратора (необязательно)"
             />
           </div>
         </div>
@@ -333,6 +473,12 @@ async function onSubmit() {
   gap: 14px;
 }
 
+.field-hint {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
 .input-invalid {
   border-color: var(--danger, #d64545) !important;
   background: var(--danger-soft, rgba(214, 69, 69, 0.06));
@@ -346,6 +492,33 @@ async function onSubmit() {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 6px;
+}
+
+/* "Параметры администратора" - выделяем зелёной рамкой/подложкой, чтобы обычные поля формы
+   визуально не путались с админскими (видны только администратору и только при создании). */
+.admin-params-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+
+.admin-params-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.admin-params-box .form-row {
+  margin: 0;
 }
 
 @media (max-width: 520px) {

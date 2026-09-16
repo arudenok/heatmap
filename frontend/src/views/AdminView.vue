@@ -3,7 +3,6 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import api from '../services/api'
 import AppHeader from '../components/AppHeader.vue'
 import AdminModerationPanel from '../components/AdminModerationPanel.vue'
-import AdminToolsPanel from '../components/AdminToolsPanel.vue'
 import AdminUsersPanel from '../components/AdminUsersPanel.vue'
 import AdminImpactPanel from '../components/AdminImpactPanel.vue'
 import AdminArchivePanel from '../components/AdminArchivePanel.vue'
@@ -11,9 +10,12 @@ import IconBase from '../components/IconBase.vue'
 
 const activeSection = ref('moderation')
 
+// Вкладка "Инструменты" убрана - весь список опубликованных инструментов и так виден
+// на главной странице реестра, где администратору уже доступны "Заметки"/"Редактировать"/
+// "Архивировать" прямо на карточках (см. ToolCard/ToolDetailModal), отдельный дубликат
+// списка внутри администрирования был избыточен.
 const sections = [
   { key: 'moderation', label: 'Модерация', icon: 'inbox' },
-  { key: 'tools', label: 'Инструменты', icon: 'layers' },
   { key: 'archive', label: 'Архив', icon: 'archive' },
   { key: 'users', label: 'Пользователи', icon: 'users' },
   { key: 'impact', label: 'Метрики влияния', icon: 'gauge' }
@@ -46,7 +48,9 @@ function onModerationChanged(count) {
 
 onMounted(() => {
   loadPendingCount()
-  pollHandle = setInterval(loadPendingCount, 20000)
+  // Тот же интервал, что и в AppHeader (см. комментарий там) - раньше 20с ощущалось
+  // слишком часто.
+  pollHandle = setInterval(loadPendingCount, 60000)
 })
 
 onUnmounted(() => {
@@ -85,7 +89,6 @@ onUnmounted(() => {
         ref="moderationPanelRef"
         @changed="onModerationChanged"
       />
-      <AdminToolsPanel v-else-if="activeSection === 'tools'" />
       <AdminArchivePanel v-else-if="activeSection === 'archive'" />
       <AdminUsersPanel v-else-if="activeSection === 'users'" />
       <AdminImpactPanel v-else-if="activeSection === 'impact'" />

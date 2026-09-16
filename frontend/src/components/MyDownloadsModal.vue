@@ -23,7 +23,7 @@ const detailOpen = ref(false)
 const detailTool = ref(null)
 
 // Нужны для формы редактирования собственной заявки (AddToolModal).
-const filterOptions = ref({ roles: [], frameworks: [], segments: [] })
+const filterOptions = ref({ roles: [], frameworks: [], constraints: [] })
 const editModalOpen = ref(false)
 const editingTool = ref(null)
 
@@ -56,7 +56,7 @@ async function loadFilterOptions() {
     const { data } = await api.get('/tools/filter-options')
     filterOptions.value = data
   } catch {
-    // Список ролей/фреймворков/сегментов не критичен - молча оставляем пустым.
+    // Список ролей/фреймворков/подсказок для "Ограничения" не критичен - молча оставляем пустым.
   }
 }
 
@@ -142,8 +142,10 @@ async function deleteTool(tool, { fromDetail = false } = {}) {
   }
 }
 
-function onDeleteFromDetail(tool) {
-  deleteTool(tool, { fromDetail: true })
+// Архивирование из модалки "Подробнее" (кнопка доступна только администратору) - сама
+// модалка уже вызвала API и закрылась, здесь только обновляем текущую вкладку.
+async function onArchivedFromDetail() {
+  await loadTab(activeTab.value)
 }
 
 // При каждом открытии модалки перезагружаем всё заново - список короткий,
@@ -243,12 +245,15 @@ watch(open, (value) => {
                 <IconBase name="trash" :size="13" /> Удалить
               </button>
             </div>
+            <p v-if="tool.status === 'REJECTED' && tool.rejectionReason" class="my-uploads-reason">
+              Причина отклонения: {{ tool.rejectionReason }}
+            </p>
           </div>
         </div>
       </template>
     </div>
 
-    <ToolDetailModal v-model="detailOpen" :tool="detailTool" @delete="onDeleteFromDetail" />
+    <ToolDetailModal v-model="detailOpen" :tool="detailTool" @archived="onArchivedFromDetail" />
     <AddToolModal
       v-model="editModalOpen"
       :filter-options="filterOptions"
@@ -364,6 +369,16 @@ watch(open, (value) => {
 }
 .my-downloads-row:last-child {
   border-bottom: none;
+}
+
+/* Причина отклонения (вкладка "Загруженные") - раньше показывалась в виджете
+   "Мои инструменты на модерации" на главной, теперь отклонённые инструменты
+   видны только здесь, так что переносим текст причины сюда же, на всю ширину строки. */
+.my-uploads-reason {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
 }
 
 .my-downloads-name {

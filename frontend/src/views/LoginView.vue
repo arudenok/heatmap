@@ -44,7 +44,7 @@ async function onSubmit() {
       </RouterLink>
 
       <h1>Вход в систему</h1>
-      <p class="auth-hint">Используйте учётную запись, выданную администратором, или зарегистрируйтесь.</p>
+      <p class="auth-hint">Используйте свою учётную запись или зарегистрируйтесь.</p>
 
       <form class="auth-form" @submit.prevent="onSubmit">
         <div class="field">

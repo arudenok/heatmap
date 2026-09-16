@@ -1,8 +1,10 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
 import IconBase from './IconBase.vue'
 import ToolNotesModal from './ToolNotesModal.vue'
+import ToolDetailModal from './ToolDetailModal.vue'
+import AddToolModal from './AddToolModal.vue'
 
 const emit = defineEmits(['changed'])
 
@@ -10,6 +12,11 @@ const pending = ref([])
 const loading = ref(true)
 const error = ref('')
 const busyId = ref(null)
+// Фильтр "только с заметками" - чисто клиентский (см. тот же паттерн в бывшем AdminToolsPanel).
+const notesOnly = ref(false)
+const displayedPending = computed(() =>
+  notesOnly.value ? pending.value.filter((t) => t.notesCount > 0) : pending.value
+)
 // id заявки, для которой сейчас открыта форма ввода причины отклонения (null - ни для одной).
 const rejectingId = ref(null)
 const reasonText = ref('')
@@ -22,6 +29,55 @@ const notesTool = ref(null)
 function openNotes(tool) {
   notesTool.value = tool
   notesOpen.value = true
+}
+
+// Карточка "Подробнее" - та же модалка, что и в общем реестре (см. DashboardView/AdminToolsPanel).
+// Клик по всей строке (кроме кнопок справа - см. @click.stop в шаблоне) открывает ToolDetailModal;
+// в ней же доступны "Редактировать" и, для уже опубликованных инструментов, "Архивировать".
+const filterOptions = ref({ roles: [], frameworks: [], constraints: [] })
+const detailOpen = ref(false)
+const detailTool = ref(null)
+const editModalOpen = ref(false)
+const editingTool = ref(null)
+
+async function loadFilterOptions() {
+  try {
+    const { data } = await api.get('/tools/filter-options')
+    filterOptions.value = data
+  } catch {
+    // Список ролей/фреймворков/подсказок для "Ограничения" не критичен для формы редактирования - молча оставляем пустым.
+  }
+}
+
+async function openDetail(tool) {
+  try {
+    const { data } = await api.post(`/tools/${tool.id}/view`)
+    Object.assign(tool, data)
+  } catch {
+    // счётчик просмотров не критичен - открываем карточку даже если запрос не прошёл
+  } finally {
+    detailTool.value = tool
+    detailOpen.value = true
+  }
+}
+
+function onEditFromDetail(tool) {
+  detailOpen.value = false
+  editingTool.value = tool
+  editModalOpen.value = true
+}
+
+async function onToolUpdated() {
+  editingTool.value = null
+  await load()
+}
+
+// Архивировать заявку, ожидающую модерации (PENDING), нельзя - кнопка в ToolDetailModal
+// показывается только для уже опубликованных инструментов, так что этот обработчик сюда
+// попадёт разве что при редком стечении обстоятельств. Оставляем для консистентности.
+function onArchivedFromDetail(tool) {
+  pending.value = pending.value.filter((t) => t.id !== tool.id)
+  emit('changed', pending.value.length)
 }
 
 async function load() {
@@ -85,39 +141,52 @@ async function confirmReject(tool) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadFilterOptions()
+})
 defineExpose({ refresh: load })
 </script>
 
 <template>
   <div class="panel admin-panel">
     <div class="admin-panel-header">
-      <h3><IconBase name="inbox" :size="16" /> Заявки на модерации <span class="badge badge-warn">{{ pending.length }}</span></h3>
-      <button class="btn btn-ghost btn-sm" type="button" @click="load"><IconBase name="refresh" :size="13" /> Обновить</button>
+      <h3><IconBase name="inbox" :size="16" /> Заявки на модерации <span class="badge badge-warn">{{ displayedPending.length }}</span></h3>
+      <div class="admin-panel-actions">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="notesOnly ? 'btn-primary' : 'btn-ghost'"
+          @click="notesOnly = !notesOnly"
+        >
+          <IconBase name="note" :size="13" /> Только с заметками
+        </button>
+        <button class="btn btn-ghost btn-sm" type="button" @click="load"><IconBase name="refresh" :size="13" /> Обновить</button>
+      </div>
     </div>
 
     <p v-if="error" class="error-text">{{ error }}</p>
 
     <div v-if="loading" class="skeleton" style="height: 60px;"></div>
 
-    <div v-else-if="!pending.length" class="empty-state">
-      <IconBase name="check" :size="24" /> Активных заявок нет
+    <div v-else-if="!displayedPending.length" class="empty-state">
+      <IconBase name="check" :size="24" /> {{ notesOnly ? 'Нет заявок с заметками' : 'Активных заявок нет' }}
     </div>
 
     <div v-else class="moderation-list">
-      <div v-for="tool in pending" :key="tool.id" class="moderation-row">
+      <div v-for="tool in displayedPending" :key="tool.id" class="moderation-row" @click="openDetail(tool)">
         <div class="moderation-info">
           <div class="moderation-title">{{ tool.name }}</div>
-          <div class="moderation-desc">{{ tool.description }}</div>
+          <div class="moderation-desc">{{ tool.shortDescription || tool.description }}</div>
           <div class="moderation-tags">
             <span v-for="r in tool.roles" :key="'r-' + r" class="tag">{{ r }}</span>
-            <span class="tag">{{ tool.framework }}</span>
-            <span v-for="s in tool.segments" :key="'s-' + s" class="tag">{{ s }}</span>
+            <span v-if="tool.framework" class="tag">{{ tool.framework }}</span>
+            <span v-if="tool.constraints" class="tag">{{ tool.constraints }}</span>
             <span class="tag">👤 {{ tool.ownerName }}</span>
           </div>
         </div>
         <div v-if="rejectingId !== tool.id" class="moderation-actions">
-          <button class="btn btn-ghost btn-sm notes-action-btn" type="button" @click="openNotes(tool)">
+          <button class="btn btn-ghost btn-sm notes-action-btn" type="button" @click.stop="openNotes(tool)">
             <IconBase name="note" :size="13" /> Заметки
             <span v-if="tool.notesCount" class="badge badge-info">{{ tool.notesCount }}</span>
           </button>
@@ -125,7 +194,7 @@ defineExpose({ refresh: load })
             class="btn btn-outline btn-sm"
             type="button"
             :disabled="busyId === tool.id"
-            @click="startReject(tool)"
+            @click.stop="startReject(tool)"
           >
             Отклонить
           </button>
@@ -133,12 +202,12 @@ defineExpose({ refresh: load })
             class="btn btn-primary btn-sm"
             type="button"
             :disabled="busyId === tool.id"
-            @click="approve(tool)"
+            @click.stop="approve(tool)"
           >
             Одобрить
           </button>
         </div>
-        <div v-else class="reject-form">
+        <div v-else class="reject-form" @click.stop>
           <textarea
             v-model="reasonText"
             class="input reject-textarea"
@@ -165,6 +234,18 @@ defineExpose({ refresh: load })
     </div>
 
     <ToolNotesModal v-model="notesOpen" :tool="notesTool" />
+    <ToolDetailModal
+      v-model="detailOpen"
+      :tool="detailTool"
+      @edit="onEditFromDetail"
+      @archived="onArchivedFromDetail"
+    />
+    <AddToolModal
+      v-model="editModalOpen"
+      :filter-options="filterOptions"
+      :edit-tool="editingTool"
+      @updated="onToolUpdated"
+    />
   </div>
 </template>
 
@@ -177,7 +258,16 @@ defineExpose({ refresh: load })
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .admin-panel-header h3 {
@@ -203,6 +293,14 @@ defineExpose({ refresh: load })
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   flex-wrap: wrap;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+/* Клик по всей строке (кроме кнопок справа и формы отклонения - см. @click.stop) открывает
+   ту же карточку "Подробнее", что и в общем реестре (см. openDetail/ToolDetailModal). */
+.moderation-row:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 10px rgba(20, 24, 38, 0.06);
 }
 
 .moderation-title {

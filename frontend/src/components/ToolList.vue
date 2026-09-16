@@ -6,12 +6,16 @@ defineProps({
   title: { type: String, required: true },
   tools: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
-  showStatus: { type: Boolean, default: false }
+  showStatus: { type: Boolean, default: false },
+  // Фильтр "только с заметками" - виден только администратору (см. DashboardView),
+  // сами заметки - внутренняя переписка администраторов по конкретному инструменту.
+  showNotesFilter: { type: Boolean, default: false }
 })
 
 defineEmits(['view'])
 
 const sort = defineModel('sort', { default: 'EFFICIENCY' })
+const notesOnly = defineModel('notesOnly', { default: false })
 
 const sortOptions = [
   { value: 'EFFICIENCY', label: 'По эффективности' },
@@ -25,12 +29,23 @@ const sortOptions = [
   <div class="tool-list-section">
     <div class="list-header">
       <h2>{{ title }}</h2>
-      <div class="sort-control">
-        <IconBase name="sort" :size="11" />
-        <span class="sort-label">Сортировка:</span>
-        <select v-model="sort" class="sort-select">
-          <option v-for="opt in sortOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-        </select>
+      <div class="list-header-actions">
+        <button
+          v-if="showNotesFilter"
+          type="button"
+          class="btn btn-sm"
+          :class="notesOnly ? 'btn-primary' : 'btn-ghost'"
+          @click="notesOnly = !notesOnly"
+        >
+          <IconBase name="note" :size="13" /> Только с заметками
+        </button>
+        <div class="sort-control">
+          <IconBase name="sort" :size="11" />
+          <span class="sort-label">Сортировка:</span>
+          <select v-model="sort" class="sort-select">
+            <option v-for="opt in sortOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -73,6 +88,13 @@ const sortOptions = [
   font-size: 17px;
   font-weight: 700;
   margin: 0;
+}
+
+.list-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .sort-control {

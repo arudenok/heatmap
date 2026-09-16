@@ -9,9 +9,8 @@ import ToolDetailModal from './ToolDetailModal.vue'
 const tools = ref([])
 const loading = ref(true)
 const error = ref('')
-const busyId = ref(null)
 const search = ref('')
-const filterOptions = ref({ roles: [], frameworks: [], segments: [] })
+const filterOptions = ref({ roles: [], frameworks: [], constraints: [] })
 // Фильтр "только с заметками" - чисто клиентский, не требует отдельного запроса
 // (notesCount уже приходит администратору вместе с остальными полями инструмента).
 const notesOnly = ref(false)
@@ -32,43 +31,6 @@ function openNotes(tool) {
   notesTool.value = tool
   notesOpen.value = true
 }
-
-// Архивирование - как отклонение заявки (см. AdminModerationPanel), только комментарий
-// необязателен: администратор может архивировать инструмент и без пояснения (ArchiveToolRequest).
-const archivingId = ref(null)
-const archiveReasonText = ref('')
-
-function startArchive(tool) {
-  archivingId.value = tool.id
-  archiveReasonText.value = ''
-}
-
-function cancelArchive() {
-  archivingId.value = null
-  archiveReasonText.value = ''
-}
-
-async function confirmArchive(tool) {
-  busyId.value = tool.id
-  try {
-    await api.post(`/admin/tools/${tool.id}/archive`, { reason: archiveReasonText.value.trim() || null })
-    // Архивированный инструмент больше не PUBLISHED - список (tab=ALL) его и не вернёт,
-    // поэтому проще сразу убрать строку локально, чем перезапрашивать весь список.
-    tools.value = tools.value.filter((t) => t.id !== tool.id)
-    archivingId.value = null
-  } catch (e) {
-    error.value = extractErrorMessage(e, 'Не удалось архивировать инструмент')
-  } finally {
-    busyId.value = null
-  }
-}
-
-const STAGE_OPTIONS = [
-  { value: 'ACCESS', label: 'Access' },
-  { value: 'USAGE', label: 'Usage' },
-  { value: 'HABIT', label: 'Habit' },
-  { value: 'STANDARD', label: 'Process Standard' }
-]
 
 async function load() {
   loading.value = true
@@ -91,7 +53,7 @@ async function loadFilterOptions() {
     const { data } = await api.get('/tools/filter-options')
     filterOptions.value = data
   } catch {
-    // Список ролей/фреймворков/сегментов не критичен для отображения - молча оставляем пустым.
+    // Список ролей/фреймворков/подсказок для "Ограничения" не критичен для отображения - молча оставляем пустым.
   }
 }
 
@@ -108,7 +70,8 @@ async function onToolUpdated() {
 // Карточка "Подробнее" - та же модалка, что и в общем реестре (см. DashboardView/MyDownloadsModal).
 // Клик по всей строке (кроме селекта этапа и кнопок справа - см. @click.stop в шаблоне)
 // засчитывает просмотр и открывает ToolDetailModal; администратору в ней доступны
-// "Редактировать" и "Удалить" (canManage у админа = true для любого инструмента, см. ToolService.toResponse).
+// "Редактировать" (canManage у админа = true для любого инструмента, см. ToolService.toResponse)
+// и, для уже опубликованных инструментов, "Архивировать".
 const detailOpen = ref(false)
 const detailTool = ref(null)
 
@@ -129,30 +92,11 @@ function onEditFromDetail(tool) {
   openEditModal(tool)
 }
 
-async function onDeleteFromDetail(tool) {
-  if (!confirm(`Удалить инструмент «${tool.name}»?`)) return
-  try {
-    await api.delete(`/tools/${tool.id}`)
-    tools.value = tools.value.filter((t) => t.id !== tool.id)
-    detailOpen.value = false
-  } catch (e) {
-    error.value = extractErrorMessage(e, 'Не удалось удалить инструмент')
-  }
-}
-
-async function onStageChange(tool, newStage) {
-  if (newStage === tool.stage) return
-  busyId.value = tool.id
-  const prevStage = tool.stage
-  try {
-    const { data } = await api.patch(`/tools/${tool.id}`, { stage: newStage })
-    Object.assign(tool, data)
-  } catch (e) {
-    tool.stage = prevStage
-    error.value = extractErrorMessage(e, 'Не удалось изменить этап инструмента')
-  } finally {
-    busyId.value = null
-  }
+// Архивирование теперь выполняется прямо из ToolDetailModal (кнопка "Архивировать") - сама
+// модалка уже вызвала API и закрылась, здесь только убираем инструмент из списка (он
+// больше не PUBLISHED, tab=ALL его не вернёт).
+function onArchivedFromDetail(tool) {
+  tools.value = tools.value.filter((t) => t.id !== tool.id)
 }
 
 let debounceHandle = null
@@ -192,7 +136,7 @@ defineExpose({ refresh: load })
       </div>
     </div>
 
-    <p class="modal-hint">Здесь можно вручную изменить этап зрелости (Access → Usage → Habit → Process Standard) для любого опубликованного инструмента.</p>
+    <p class="modal-hint">Этап зрелости, статус и метрики влияния меняются через "Редактировать" в карточке инструмента (открывается кликом по строке).</p>
 
     <p v-if="error" class="error-text">{{ error }}</p>
 
@@ -220,50 +164,11 @@ defineExpose({ refresh: load })
             <span class="tag">👤 {{ tool.ownerName }}</span>
           </div>
         </div>
-        <div v-if="archivingId !== tool.id" class="tools-actions">
-          <label class="stage-label">Этап:</label>
-          <select
-            class="input stage-select"
-            :value="tool.stage"
-            :disabled="busyId === tool.id"
-            @click.stop
-            @change="onStageChange(tool, $event.target.value)"
-          >
-            <option v-for="opt in STAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
+        <div class="tools-actions">
           <button class="btn btn-ghost btn-sm notes-action-btn" type="button" @click.stop="openNotes(tool)">
             <IconBase name="note" :size="13" /> Заметки
             <span v-if="tool.notesCount" class="badge badge-info">{{ tool.notesCount }}</span>
           </button>
-          <button
-            class="btn btn-outline btn-sm"
-            type="button"
-            :disabled="busyId === tool.id"
-            @click.stop="startArchive(tool)"
-          >
-            <IconBase name="archive" :size="13" /> Архивировать
-          </button>
-        </div>
-        <div v-else class="archive-form" @click.stop>
-          <textarea
-            v-model="archiveReasonText"
-            class="input archive-textarea"
-            rows="2"
-            placeholder="Комментарий для автора (необязательно) - почему инструмент архивирован"
-          ></textarea>
-          <div class="archive-form-actions">
-            <button class="btn btn-ghost btn-sm" type="button" :disabled="busyId === tool.id" @click="cancelArchive">
-              Отмена
-            </button>
-            <button
-              class="btn btn-danger btn-sm"
-              type="button"
-              :disabled="busyId === tool.id"
-              @click="confirmArchive(tool)"
-            >
-              Подтвердить архивацию
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -279,7 +184,7 @@ defineExpose({ refresh: load })
       v-model="detailOpen"
       :tool="detailTool"
       @edit="onEditFromDetail"
-      @delete="onDeleteFromDetail"
+      @archived="onArchivedFromDetail"
     />
   </div>
 </template>
@@ -379,21 +284,6 @@ defineExpose({ refresh: load })
   flex-shrink: 0;
 }
 
-.stage-label {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.stage-select {
-  /* Раньше была "width: auto" - ширина селекта зависела от текста текущего этапа
-     ("Access" короче, чем "Process Standard"), а весь блок с кнопками справа от
-     него прижат к правому краю строки (space-between в .tools-row). Из-за этого
-     у каждой строки "Этап:"/селект/кнопки начинались с разного X - список выглядел
-     "рваным". Фиксированная ширина устраняет эту зависимость. */
-  width: 160px;
-}
-
 /* Кнопка "Заметки" тоже меняла ширину в зависимости от того, есть ли бейдж со
    счётчиком - по той же причине (прижатый к правому краю блок) это тоже сдвигало
    всё, что стоит левее. Фиксируем минимальную ширину под самый широкий вариант
@@ -410,23 +300,5 @@ defineExpose({ refresh: load })
   padding: 30px;
   color: var(--text-muted);
   font-size: 14px;
-}
-
-.archive-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex-basis: 100%;
-}
-
-.archive-textarea {
-  resize: vertical;
-  min-height: 44px;
-}
-
-.archive-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 </style>

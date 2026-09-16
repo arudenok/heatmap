@@ -12,21 +12,21 @@ VALUES ('1001', '$2b$10$3jKB.7hLGjbwx50ShP3WAuMzhKKUyFJhz1iR.Eq6HGj3meQz0DH72', 
 
 --changeset heatmap:007-seed-tools context:for_demo
 --comment: демонстрационные записи реестра инструментов
-INSERT INTO ai_tool (name, description, stage, status, framework, source_label, owner_name, downloads, dau, efficiency_pct, created_by)
+INSERT INTO ai_tool (name, description, short_description, stage, status, framework, tool_constraints, source_label, owner_name, downloads, dau, efficiency_pct, created_by)
 VALUES
-    ('AutoTest-GPT', 'Генерация тест-кейсов на основе спецификаций', 'ACCESS', 'PUBLISHED', 'Openspec', 'https://github.com/heatmap-tools/autotest-gpt', 'Иванов И.И.', 124, NULL, 92, (SELECT id FROM app_user WHERE username = '1001')),
-    ('CodeReview-Agent', 'Автоматический ревью кода с рекомендациями', 'USAGE', 'PUBLISHED', 'Superpowers', 'https://github.com/heatmap-tools/codereview-agent', 'Петрова А.С.', 89, NULL, 87, NULL),
-    ('DocAssist', 'Генерация технической документации по коду', 'HABIT', 'PUBLISHED', 'SDD не применим', 'https://github.com/heatmap-tools/docassist', 'Смирнов Д.К.', 1200, 1200, 94, NULL),
-    ('TestPilot-AI', 'Автономное тестирование с AI-агентами', 'STANDARD', 'PUBLISHED', 'Openspec', 'https://github.com/heatmap-tools/testpilot-ai', 'Козлов М.А.', 3400, NULL, 98, NULL),
-    ('SpecWriter', 'Черновики спецификаций из пользовательских историй', 'ACCESS', 'PENDING', 'Openspec', 'https://github.com/heatmap-tools/specwriter', 'Иванов И.И.', 12, NULL, 71, (SELECT id FROM app_user WHERE username = '1001')),
-    ('RefactorBot', 'Подсказки по рефакторингу legacy-кода', 'USAGE', 'PUBLISHED', 'Superpowers', 'https://github.com/heatmap-tools/refactorbot', 'Кузнецова О.В.', 64, NULL, 81, NULL),
-    ('DataLens-AI', 'Автоматическая разметка и профилирование датасетов', 'HABIT', 'PUBLISHED', 'SDD не применим', 'https://github.com/heatmap-tools/datalens-ai', 'Волков П.Н.', 940, 610, 88, NULL),
-    ('SecScan-Agent', 'Сканирование уязвимостей в пул-реквестах', 'STANDARD', 'PUBLISHED', 'Openspec', 'https://github.com/heatmap-tools/secscan-agent', 'Смирнов Д.К.', 2100, NULL, 95, NULL),
-    ('UIComposer', 'Генерация UI-компонентов по макетам', 'ACCESS', 'PENDING', 'Superpowers', 'https://github.com/heatmap-tools/uicomposer', 'Петрова А.С.', 8, NULL, 65, NULL),
-    ('LoadForecast-AI', 'Прогноз нагрузки на основе исторических метрик', 'USAGE', 'PUBLISHED', 'SDD не применим', 'https://github.com/heatmap-tools/loadforecast-ai', 'Козлов М.А.', 47, NULL, 79, NULL);
+    ('AutoTest-GPT', 'Генерация тест-кейсов на основе спецификаций', 'Автотесты из спецификаций за минуты', 'ACCESS', 'PUBLISHED', 'Openspec', 'Только backend-сервисы', 'https://github.com/heatmap-tools/autotest-gpt', 'Иванов И.И.', 124, NULL, 92, (SELECT id FROM app_user WHERE username = '1001')),
+    ('CodeReview-Agent', 'Автоматический ревью кода с рекомендациями', 'Ревью кода с рекомендациями по правкам', 'USAGE', 'PUBLISHED', 'Superpowers', 'Только backend-сервисы', 'https://github.com/heatmap-tools/codereview-agent', 'Петрова А.С.', 89, NULL, 87, NULL),
+    ('DocAssist', 'Генерация технической документации по коду', 'Документация по коду без ручного описания', 'HABIT', 'PUBLISHED', 'SDD не применим', NULL, 'https://github.com/heatmap-tools/docassist', 'Смирнов Д.К.', 1200, 1200, 94, NULL),
+    ('TestPilot-AI', 'Автономное тестирование с AI-агентами', 'AI-агенты тестируют продукт автономно', 'STANDARD', 'PUBLISHED', 'Openspec', 'Только backend-сервисы', 'https://github.com/heatmap-tools/testpilot-ai', 'Козлов М.А.', 3400, NULL, 98, NULL),
+    ('SpecWriter', 'Черновики спецификаций из пользовательских историй', 'Черновик спецификации из пользовательской истории', 'ACCESS', 'PENDING', 'Openspec', NULL, 'https://github.com/heatmap-tools/specwriter', 'Иванов И.И.', 12, NULL, 71, (SELECT id FROM app_user WHERE username = '1001')),
+    ('RefactorBot', 'Подсказки по рефакторингу legacy-кода', 'Подсказки, что и как рефакторить', 'USAGE', 'PUBLISHED', 'Superpowers', 'Только backend-сервисы', 'https://github.com/heatmap-tools/refactorbot', 'Кузнецова О.В.', 64, NULL, 81, NULL),
+    ('DataLens-AI', 'Автоматическая разметка и профилирование датасетов', 'Разметка и профиль датасета за секунды', 'HABIT', 'PUBLISHED', 'SDD не применим', 'Требует доступ к data-платформе', 'https://github.com/heatmap-tools/datalens-ai', 'Волков П.Н.', 940, 610, 88, NULL),
+    ('SecScan-Agent', 'Сканирование уязвимостей в пул-реквестах', 'Проверка PR на уязвимости перед мержем', 'STANDARD', 'PUBLISHED', 'Openspec', NULL, 'https://github.com/heatmap-tools/secscan-agent', 'Смирнов Д.К.', 2100, NULL, 95, NULL),
+    ('UIComposer', 'Генерация UI-компонентов по макетам', 'UI-компоненты прямо из макета', 'ACCESS', 'PENDING', 'Superpowers', 'Только frontend', 'https://github.com/heatmap-tools/uicomposer', 'Петрова А.С.', 8, NULL, 65, NULL),
+    ('LoadForecast-AI', 'Прогноз нагрузки на основе исторических метрик', 'Прогноз нагрузки по истории метрик', 'USAGE', 'PUBLISHED', 'SDD не применим', 'Только backend-сервисы', 'https://github.com/heatmap-tools/loadforecast-ai', 'Козлов М.А.', 47, NULL, 79, NULL);
 
---changeset heatmap:007-seed-tool-roles-segments context:for_demo
---comment: роль/сегмент демо-инструментов (по одной строке на значение - см. 003-create-tool-role-segment.sql)
+--changeset heatmap:007-seed-tool-roles context:for_demo
+--comment: роль демо-инструментов (по одной строке на значение - см. 003-create-tool-role-segment.sql)
 INSERT INTO tool_role (tool_id, role)
 VALUES
     ((SELECT id FROM ai_tool WHERE name = 'AutoTest-GPT'), 'Тестирование'),
@@ -39,19 +39,6 @@ VALUES
     ((SELECT id FROM ai_tool WHERE name = 'SecScan-Agent'), 'Разработка'),
     ((SELECT id FROM ai_tool WHERE name = 'UIComposer'), 'Разработка'),
     ((SELECT id FROM ai_tool WHERE name = 'LoadForecast-AI'), 'Аналитика');
-
-INSERT INTO tool_segment (tool_id, segment)
-VALUES
-    ((SELECT id FROM ai_tool WHERE name = 'AutoTest-GPT'), 'Backend'),
-    ((SELECT id FROM ai_tool WHERE name = 'CodeReview-Agent'), 'Backend'),
-    ((SELECT id FROM ai_tool WHERE name = 'DocAssist'), 'Для всех'),
-    ((SELECT id FROM ai_tool WHERE name = 'TestPilot-AI'), 'Backend'),
-    ((SELECT id FROM ai_tool WHERE name = 'SpecWriter'), 'Для всех'),
-    ((SELECT id FROM ai_tool WHERE name = 'RefactorBot'), 'Backend'),
-    ((SELECT id FROM ai_tool WHERE name = 'DataLens-AI'), 'Data/ML'),
-    ((SELECT id FROM ai_tool WHERE name = 'SecScan-Agent'), 'Security'),
-    ((SELECT id FROM ai_tool WHERE name = 'UIComposer'), 'Frontend'),
-    ((SELECT id FROM ai_tool WHERE name = 'LoadForecast-AI'), 'Backend');
 
 --changeset heatmap:007-seed-impact-habit context:for_demo
 --comment: секция влияния на метрики - блок Habit

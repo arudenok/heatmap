@@ -18,11 +18,10 @@ class ToolController(private val toolService: ToolService) {
         @RequestParam(defaultValue = "TOP") tab: String,
         @RequestParam(required = false) role: List<String>?,
         @RequestParam(required = false) framework: String?,
-        @RequestParam(required = false) segment: List<String>?,
         @RequestParam(required = false) search: String?,
         @RequestParam(required = false) sort: String?,
         @AuthenticationPrincipal principal: UserPrincipal?
-    ): List<ToolResponse> = toolService.findByTab(tab, role, framework, segment, search, sort, principal)
+    ): List<ToolResponse> = toolService.findByTab(tab, role, framework, search, sort, principal)
 
     @GetMapping("/counts")
     fun counts(): ToolCountsResponse = toolService.counts()

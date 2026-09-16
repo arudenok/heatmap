@@ -18,22 +18,36 @@ const router = useRouter()
 
 const stats = ref(null)
 const counts = ref({})
-const filterOptions = ref({ roles: [], frameworks: [], segments: [] })
+const filterOptions = ref({ roles: [], frameworks: [], constraints: [] })
 const impactBlocks = ref([])
 const tools = ref([])
 const myTools = ref([])
 
 // Открываем реестр сразу на вкладке "Все инструменты", а не "Топ".
 const activeTab = ref('ALL')
-const filters = reactive({ role: [], framework: '', segment: [], search: '', sort: 'EFFICIENCY' })
+const filters = reactive({ role: [], framework: '', search: '', sort: 'EFFICIENCY' })
+
+// Фильтр "только с заметками" - виден администратору только на вкладке "Все инструменты"
+// (см. ToolList/showNotesFilter), чисто клиентский - notesCount уже приходит вместе с
+// остальными полями инструмента (см. ToolService.toResponse, считается только для ADMIN).
+const notesOnly = ref(false)
+watch(activeTab, () => {
+  notesOnly.value = false
+})
 
 // Пагинация списка инструментов - не больше 5 на странице.
 const PAGE_SIZE = 5
 const currentPage = ref(1)
-const totalPages = computed(() => Math.max(1, Math.ceil(tools.value.length / PAGE_SIZE)))
+const notesFilteredTools = computed(() =>
+  notesOnly.value ? tools.value.filter((t) => t.notesCount > 0) : tools.value
+)
+const totalPages = computed(() => Math.max(1, Math.ceil(notesFilteredTools.value.length / PAGE_SIZE)))
 const pagedTools = computed(() => {
   const start = (currentPage.value - 1) * PAGE_SIZE
-  return tools.value.slice(start, start + PAGE_SIZE)
+  return notesFilteredTools.value.slice(start, start + PAGE_SIZE)
+})
+watch(notesOnly, () => {
+  currentPage.value = 1
 })
 
 function goToPage(page) {
@@ -88,11 +102,10 @@ async function loadTools() {
     const { data } = await api.get('/tools', {
       params: {
         tab: activeTab.value,
-        // Бэкенд принимает список ролей/сегментов через запятую в одном параметре
+        // Бэкенд принимает список ролей через запятую в одном параметре
         // (Spring сам разбивает такую строку в List<String>).
         role: filters.role.length ? filters.role.join(',') : undefined,
         framework: filters.framework || undefined,
-        segment: filters.segment.length ? filters.segment.join(',') : undefined,
         search: filters.search || undefined,
         sort: filters.sort || undefined
       }
@@ -120,16 +133,12 @@ async function loadMine() {
   }
 }
 
-// Виджет "Мои инструменты на модерации" отслеживает только заявки, требующие внимания
-// автора - на модерации или отклонённые (их можно поправить и отправить заново).
-// Опубликованный инструмент из виджета убираем - он уже виден в общем реестре, где его
-// тоже можно отредактировать (карточка → "Подробнее" → "Редактировать", см. ToolDetailModal);
-// такая правка от автора (не администратора) точно так же вернёт инструмент на модерацию.
-// Архивированный администратором инструмент сюда тоже не попадает - это не то, что
-// требует действий автора прямо сейчас (см. уведомление об архивации).
-const myPendingTools = computed(() =>
-  myTools.value.filter((t) => t.status === 'PENDING' || t.status === 'REJECTED')
-)
+// Виджет "Мои инструменты на модерации" на главной отслеживает только заявки, реально
+// ожидающие рассмотрения - т.е. только PENDING. Все остальные статусы (опубликован,
+// отклонён, архивирован) отсюда убраны и видны только в "Мои инструменты" (меню профиля →
+// MyDownloadsModal, вкладка "Загруженные" - там /tools/mine отдаёт инструменты автора
+// в любом статусе, см. ToolService.findMine), чтобы не дублировать одно и то же в двух местах.
+const myPendingTools = computed(() => myTools.value.filter((t) => t.status === 'PENDING'))
 
 function openAddModal() {
   if (!auth.isAuthenticated) {
@@ -155,7 +164,6 @@ async function onToolUpdated() {
 function resetFilters() {
   filters.role = []
   filters.framework = ''
-  filters.segment = []
   filters.search = ''
   filters.sort = 'EFFICIENCY'
 }
@@ -178,10 +186,10 @@ async function onDeleteTool(tool) {
   }
 }
 
-// Удаление из модалки "Подробнее": закрываем её только если удаление реально произошло.
-async function onDeleteFromDetail(tool) {
-  const deleted = await onDeleteTool(tool)
-  if (deleted) detailOpen.value = false
+// Архивирование из модалки "Подробнее" (кнопка доступна только администратору) - сама
+// модалка уже вызвала API и закрылась, здесь только обновляем списки на странице.
+async function onArchivedFromDetail() {
+  await Promise.all([loadMine(), loadTools(), loadTopData()])
 }
 
 // Правка из модалки "Подробнее" (см. ToolDetailModal) - закрываем её и открываем ту же
@@ -216,7 +224,7 @@ async function onRated() {
 
 let debounceHandle = null
 watch(
-  () => [activeTab.value, filters.role, filters.framework, filters.segment, filters.search, filters.sort],
+  () => [activeTab.value, filters.role, filters.framework, filters.search, filters.sort],
   () => {
     clearTimeout(debounceHandle)
     debounceHandle = setTimeout(loadTools, 200)
@@ -238,7 +246,6 @@ onMounted(() => {
       <div class="page-heading">
         <div>
           <h1>Реестр AI-инструментов</h1>
-          <p>CLI-скиллы, агенты и фреймворки, применяемые в цикле разработки</p>
         </div>
         <button class="btn btn-primary" type="button" @click="openAddModal">
           <IconBase name="plus" :size="15" /> Добавить инструмент
@@ -255,16 +262,8 @@ onMounted(() => {
           <div v-for="t in myPendingTools" :key="t.id" class="my-request-row">
             <div class="my-request-main">
               <span class="my-request-name">{{ t.name }}</span>
-              <span
-                class="badge"
-                :class="{ PENDING: 'badge-warn', PUBLISHED: 'badge-accent', REJECTED: 'badge-danger' }[t.status]"
-              >
-                {{ { PENDING: 'На модерации', PUBLISHED: 'Опубликован', REJECTED: 'Отклонено' }[t.status] }}
-              </span>
+              <span class="badge badge-warn">На модерации</span>
             </div>
-            <p v-if="t.status === 'REJECTED' && t.rejectionReason" class="my-request-reason">
-              Причина отклонения: {{ t.rejectionReason }}
-            </p>
             <div class="my-request-actions">
               <button class="btn btn-ghost btn-sm" type="button" @click="openEditModal(t)">Редактировать</button>
               <button class="btn btn-ghost btn-sm" type="button" @click="onDeleteTool(t)">Отозвать</button>
@@ -276,7 +275,6 @@ onMounted(() => {
       <FilterBar
         v-model:role="filters.role"
         v-model:framework="filters.framework"
-        v-model:segment="filters.segment"
         v-model:search="filters.search"
         :filter-options="filterOptions"
         :result-count="tools.length"
@@ -287,7 +285,9 @@ onMounted(() => {
         :title="tabTitles[activeTab]"
         :tools="pagedTools"
         :loading="loadingTools"
+        :show-notes-filter="auth.isAdmin && activeTab === 'ALL'"
         v-model:sort="filters.sort"
+        v-model:notes-only="notesOnly"
         @view="onViewTool"
       />
 
@@ -339,7 +339,7 @@ onMounted(() => {
     <ToolDetailModal
       v-model="detailOpen"
       :tool="detailTool"
-      @delete="onDeleteFromDetail"
+      @archived="onArchivedFromDetail"
       @downloaded="onToolDownloaded"
       @edit="onEditFromDetail"
     />

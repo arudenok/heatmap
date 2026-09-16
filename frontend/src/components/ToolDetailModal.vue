@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue'
-import api from '../services/api'
+import { ref, watch } from 'vue'
+import api, { extractErrorMessage } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import IconBase from './IconBase.vue'
 import ToolNotesModal from './ToolNotesModal.vue'
@@ -10,12 +10,26 @@ const props = defineProps({
 })
 
 const open = defineModel({ default: false })
-const emit = defineEmits(['delete', 'downloaded', 'edit'])
+const emit = defineEmits(['archived', 'downloaded', 'edit'])
 const auth = useAuthStore()
 
 // Заметки администраторов - отдельная модалка поверх этой же карточки инструмента,
-// открывается только администраторам (см. кнопку "Заметки" в modal-actions).
+// открывается только администраторам (см. кнопку "Заметки" справа над разделителем).
 const notesOpen = ref(false)
+
+// Краткое описание показывается по умолчанию, полное - по клику "Подробное описание"
+// (см. detail-desc-full в шаблоне). Если краткое описание не заполнено - показываем сразу
+// полное и кнопку-переключатель не выводим (скрывать нечего).
+const fullDescOpen = ref(false)
+
+// Архивирование - доступно только администратору и только для опубликованного инструмента
+// (см. ToolService.archive). Раньше здесь была кнопка "Удалить" - теперь для скрытия
+// инструмента из общего реестра используется архивация; прямое удаление осталось в других
+// местах (кнопка "Отозвать" в виджете на главной, "Удалить" во вкладке "Загруженные").
+const archiving = ref(false)
+const archiveReasonText = ref('')
+const archiveBusy = ref(false)
+const archiveError = ref('')
 
 const stageMeta = {
   ACCESS: { label: 'Access', class: 'stage-access' },
@@ -28,15 +42,49 @@ function close() {
   open.value = false
 }
 
-function onDelete() {
-  emit('delete', props.tool)
-}
+// Сбрасываем форму архивации при каждом закрытии модалки - иначе при повторном открытии
+// для другого инструмента могла остаться раскрытой форма с прошлым комментарием.
+watch(open, (value) => {
+  if (!value) {
+    archiving.value = false
+    archiveReasonText.value = ''
+    archiveError.value = ''
+    fullDescOpen.value = false
+  }
+})
 
 // Правка своего инструмента доступна из общего реестра (не только из виджета "Мои инструменты
 // на модерации" - тот больше не показывает опубликованные). Правка от автора (не администратора)
 // уже опубликованного или отклонённого инструмента отправит его на повторную модерацию (см. ToolService.update).
 function onEdit() {
   emit('edit', props.tool)
+}
+
+function startArchive() {
+  archiving.value = true
+  archiveReasonText.value = ''
+  archiveError.value = ''
+}
+
+function cancelArchive() {
+  archiving.value = false
+  archiveReasonText.value = ''
+  archiveError.value = ''
+}
+
+async function confirmArchive() {
+  archiveBusy.value = true
+  archiveError.value = ''
+  try {
+    await api.post(`/admin/tools/${props.tool.id}/archive`, { reason: archiveReasonText.value.trim() || null })
+    archiving.value = false
+    emit('archived', props.tool)
+    close()
+  } catch (e) {
+    archiveError.value = extractErrorMessage(e, 'Не удалось архивировать инструмент')
+  } finally {
+    archiveBusy.value = false
+  }
 }
 
 // Скачивание засчитывается по клику: увеличиваем счётчик, открываем ссылку на источник
@@ -92,13 +140,32 @@ function formatDate(value) {
         <button class="icon-btn" type="button" @click="close"><IconBase name="x" :size="16" /></button>
       </div>
 
-      <p class="detail-desc">{{ tool.description }}</p>
+      <!-- Краткое описание - основной текст на карточке; полное всегда доступно по клику
+           (если краткое не заполнено - показываем сразу полное, скрывать нечего). -->
+      <p class="detail-desc">{{ tool.shortDescription || tool.description }}</p>
+      <button
+        v-if="tool.shortDescription && tool.shortDescription !== tool.description"
+        type="button"
+        class="full-desc-toggle"
+        @click="fullDescOpen = !fullDescOpen"
+      >
+        {{ fullDescOpen ? 'Скрыть подробное описание' : 'Подробное описание' }}
+        <IconBase :name="fullDescOpen ? 'chevronUp' : 'chevronDown'" :size="12" />
+      </button>
+      <p v-if="fullDescOpen" class="detail-desc detail-desc-full">{{ tool.description }}</p>
 
       <div class="detail-tags">
         <span v-for="r in tool.roles" :key="'r-' + r" class="tag">{{ r }}</span>
-        <span class="tag">{{ tool.framework }}</span>
-        <span v-for="s in tool.segments" :key="'s-' + s" class="tag">{{ s }}</span>
+        <span v-if="tool.framework" class="tag">{{ tool.framework }}</span>
+        <span v-if="tool.constraints" class="tag">{{ tool.constraints }}</span>
         <span class="tag">{{ tool.sourceLabel }}</span>
+      </div>
+
+      <div v-if="auth.isAdmin" class="detail-notes-row">
+        <button type="button" class="btn btn-notes-highlight" @click="notesOpen = true">
+          <IconBase name="note" :size="14" /> Заметки
+          <span v-if="tool.notesCount" class="badge badge-info">{{ tool.notesCount }}</span>
+        </button>
       </div>
 
       <div class="detail-grid">
@@ -136,7 +203,7 @@ function formatDate(value) {
         </div>
       </div>
 
-      <div class="modal-actions">
+      <div v-if="!archiving" class="modal-actions">
         <div class="modal-actions-left">
           <button
             v-if="tool.canManage"
@@ -147,26 +214,35 @@ function formatDate(value) {
             <IconBase name="edit" :size="14" /> Редактировать
           </button>
           <button
-            v-if="tool.canManage"
+            v-if="auth.isAdmin && tool.status === 'PUBLISHED'"
             type="button"
-            class="btn btn-danger-ghost"
-            @click="onDelete"
+            class="btn btn-outline"
+            @click="startArchive"
           >
-            <IconBase name="trash" :size="14" /> Удалить
-          </button>
-          <button
-            v-if="auth.isAdmin"
-            type="button"
-            class="btn btn-ghost"
-            @click="notesOpen = true"
-          >
-            <IconBase name="note" :size="14" /> Заметки
-            <span v-if="tool.notesCount" class="badge badge-info">{{ tool.notesCount }}</span>
+            <IconBase name="archive" :size="14" /> Архивировать
           </button>
         </div>
         <div class="modal-actions-right">
           <button type="button" class="btn btn-primary" @click="onDownload">
             <IconBase name="download" :size="14" /> Скачать
+          </button>
+        </div>
+      </div>
+
+      <div v-else class="archive-form">
+        <textarea
+          v-model="archiveReasonText"
+          class="input archive-textarea"
+          rows="2"
+          placeholder="Комментарий для автора (необязательно) - почему инструмент архивирован"
+        ></textarea>
+        <p v-if="archiveError" class="error-text">{{ archiveError }}</p>
+        <div class="archive-form-actions">
+          <button class="btn btn-ghost btn-sm" type="button" :disabled="archiveBusy" @click="cancelArchive">
+            Отмена
+          </button>
+          <button class="btn btn-danger btn-sm" type="button" :disabled="archiveBusy" @click="confirmArchive">
+            Подтвердить архивацию
           </button>
         </div>
       </div>
@@ -248,11 +324,60 @@ function formatDate(value) {
   margin: 0 0 14px;
 }
 
+.full-desc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -8px 0 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-dark);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.full-desc-toggle:hover {
+  text-decoration: underline;
+}
+
+.detail-desc-full {
+  margin-top: -6px;
+}
+
 .detail-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
+}
+
+/* Кнопка "Заметки" вынесена сюда, отдельной строкой справа прямо над разделителем
+   (border-top у .detail-grid) - её переместили из общего ряда действий внизу модалки
+   и выделили, чтобы она была заметнее. */
+.detail-notes-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.btn-notes-highlight {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.btn-notes-highlight:hover {
+  background: var(--accent);
+  color: #ffffff;
 }
 
 .detail-grid {
@@ -286,17 +411,23 @@ function formatDate(value) {
   font-size: 12px;
 }
 
+/* flex-wrap обязателен и вне мобильного брейкпоинта: слева до двух кнопок
+   (Редактировать/Архивировать) на узких экранах могли продавить "Скачать" справа
+   за пределы модалки (у .modal нет overflow-x, поэтому лишнее не обрезалось,
+   а вылезало за рамку). */
 .modal-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin-top: 20px;
+  flex-wrap: wrap;
 }
 
 .modal-actions-left {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .modal-actions-right {
@@ -305,9 +436,28 @@ function formatDate(value) {
   margin-left: auto;
 }
 
+/* Форма архивации (комментарий + подтверждение) заменяет собой .modal-actions на время
+   заполнения - тот же паттерн, что и в админ-панелях со списками инструментов. */
+.archive-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.archive-textarea {
+  resize: vertical;
+  min-height: 44px;
+}
+
+.archive-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 480px) {
   .detail-grid { grid-template-columns: 1fr; }
-  .modal-actions { flex-wrap: wrap; }
   .modal-actions-left { width: 100%; }
   .modal-actions-left .btn { flex: 1; }
   .modal-actions-right { margin-left: 0; width: 100%; }
