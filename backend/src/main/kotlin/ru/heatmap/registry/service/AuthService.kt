@@ -1,8 +1,19 @@
 package ru.heatmap.registry.service
 
+import org.springframework.data.repository.findByIdOrNull
+import org.springframework.security.authentication.AuthenticationManager
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.AuthenticationException
+import org.springframework.security.crypto.password.PasswordEncoder
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import ru.heatmap.registry.domain.AppUser
 import ru.heatmap.registry.domain.Role
-import ru.heatmap.registry.dto.*
+import ru.heatmap.registry.dto.AuthResponse
+import ru.heatmap.registry.dto.LoginRequest
+import ru.heatmap.registry.dto.MeResponse
+import ru.heatmap.registry.dto.RegisterRequest
+import ru.heatmap.registry.dto.UpdateProfileRequest
 import ru.heatmap.registry.mapper.UserMapper
 import ru.heatmap.registry.repository.AppUserRepository
 import ru.heatmap.registry.security.JwtService
@@ -11,13 +22,6 @@ import ru.heatmap.registry.web.BadRequestException
 import ru.heatmap.registry.web.ConflictException
 import ru.heatmap.registry.web.NotFoundException
 import ru.heatmap.registry.web.UnauthorizedException
-import org.springframework.data.repository.findByIdOrNull
-import org.springframework.security.authentication.AuthenticationManager
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
-import org.springframework.security.core.AuthenticationException
-import org.springframework.security.crypto.password.PasswordEncoder
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 
 @Service
 class AuthService(

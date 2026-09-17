@@ -1,0 +1,5 @@
+backend/target/
+data/
+*.log
+.idea/
+*.iml
