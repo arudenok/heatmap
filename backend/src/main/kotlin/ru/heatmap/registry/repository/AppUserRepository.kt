@@ -11,4 +11,11 @@ interface AppUserRepository : JpaRepository<AppUser, UUID> {
 
     // Нужно, чтобы разослать уведомление о новой заявке на модерацию всем администраторам.
     fun findByRole(role: Role): List<AppUser>
+
+    // Поиск по логину Сигма (=username) или ФИО (см. AdminUserService.findAll) - оба параметра
+    // получают одну и ту же строку поиска, отфильтровано на уровне БД, а не в памяти.
+    fun findByUsernameContainingIgnoreCaseOrFullNameContainingIgnoreCase(
+        username: String,
+        fullName: String
+    ): List<AppUser>
 }

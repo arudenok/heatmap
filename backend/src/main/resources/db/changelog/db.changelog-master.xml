@@ -5,15 +5,6 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
             http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.26.xsd">
 
-    <!-- Все реальные изменения схемы описаны в формате SQL (formatted sql),
-         этот master-файл лишь задаёт порядок их применения.
-
-         Проект ещё не в проде (только локальная разработка) - поэтому схема ведётся
-         как набор "базовых" CREATE TABLE чейнджсетов, которые редактируются напрямую
-         при изменении структуры, а не обрастают цепочкой ALTER TABLE чейнджсетов.
-         При правке уже применённого чейнджсета локальную БД (папка backend/data/)
-         нужно удалить, чтобы Liquibase пересоздал схему с нуля. -->
-
     <include file="db/changelog/sql/001-create-app-user.sql" relativeToChangelogFile="false"/>
     <include file="db/changelog/sql/002-create-ai-tool.sql" relativeToChangelogFile="false"/>
     <include file="db/changelog/sql/003-create-tool-role-segment.sql" relativeToChangelogFile="false"/>

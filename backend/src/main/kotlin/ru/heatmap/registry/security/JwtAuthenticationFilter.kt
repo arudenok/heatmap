@@ -7,7 +7,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource
 import org.springframework.security.web.util.matcher.OrRequestMatcher
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher.pathPattern
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 
@@ -18,10 +18,10 @@ class JwtAuthenticationFilter(
 ) : OncePerRequestFilter() {
 
     private val publicMatcher = OrRequestMatcher(
-        AntPathRequestMatcher("/api/auth/register"),
-        AntPathRequestMatcher("/api/auth/login"),
-        AntPathRequestMatcher("/actuator/health"),
-        AntPathRequestMatcher("/actuator/info")
+        pathPattern("/api/auth/register"),
+        pathPattern("/api/auth/login"),
+        pathPattern("/actuator/health"),
+        pathPattern("/actuator/info")
     )
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =

@@ -4,6 +4,7 @@ import ru.heatmap.registry.domain.ToolNote
 import ru.heatmap.registry.dto.CreateToolNoteRequest
 import ru.heatmap.registry.dto.ToolNoteResponse
 import ru.heatmap.registry.dto.UpdateToolNoteRequest
+import ru.heatmap.registry.mapper.ToolNoteMapper
 import ru.heatmap.registry.repository.AiToolRepository
 import ru.heatmap.registry.repository.AppUserRepository
 import ru.heatmap.registry.repository.ToolNoteRepository
@@ -27,12 +28,13 @@ class ToolNoteService(
     private val toolNoteRepository: ToolNoteRepository,
     private val aiToolRepository: AiToolRepository,
     private val appUserRepository: AppUserRepository,
-    private val notificationService: NotificationService
+    private val notificationService: NotificationService,
+    private val toolNoteMapper: ToolNoteMapper
 ) {
 
     fun listByTool(toolId: UUID, principal: UserPrincipal): List<ToolNoteResponse> {
         if (!aiToolRepository.existsById(toolId)) throw NotFoundException("Инструмент не найден")
-        return toolNoteRepository.findByToolIdOrderByCreatedAtAsc(toolId).map { it.toResponse(principal) }
+        return toolNoteRepository.findByToolIdOrderByCreatedAtAsc(toolId).map { toResponse(it, principal) }
     }
 
     @Transactional
@@ -46,7 +48,7 @@ class ToolNoteService(
         val note = ToolNote(tool = tool, author = author, text = request.text.trim(), createdAt = now, updatedAt = now)
         val saved = toolNoteRepository.save(note)
         notificationService.notifyAdminsOfNewNote(tool, principal.id)
-        return saved.toResponse(principal)
+        return toResponse(saved, principal)
     }
 
     @Transactional
@@ -57,7 +59,7 @@ class ToolNoteService(
         }
         note.text = request.text.trim()
         note.updatedAt = Instant.now()
-        return toolNoteRepository.save(note).toResponse(principal)
+        return toResponse(toolNoteRepository.save(note), principal)
     }
 
     @Transactional
@@ -69,14 +71,8 @@ class ToolNoteService(
         toolNoteRepository.delete(note)
     }
 
-    private fun ToolNote.toResponse(principal: UserPrincipal) = ToolNoteResponse(
-        id = this.id!!,
-        toolId = this.tool.id!!,
-        authorId = this.author.id!!,
-        authorName = this.author.fullName,
-        text = this.text,
-        canManage = this.author.id == principal.id,
-        createdAt = this.createdAt,
-        updatedAt = this.updatedAt
-    )
+    // canManage - true, если заметку оставил сам principal (только он может её редактировать/удалить,
+    // см. update/delete выше) - зависит от текущего пользователя, поэтому не часть toBaseResponse.
+    private fun toResponse(note: ToolNote, principal: UserPrincipal): ToolNoteResponse =
+        toolNoteMapper.toBaseResponse(note).copy(canManage = note.author.id == principal.id)
 }

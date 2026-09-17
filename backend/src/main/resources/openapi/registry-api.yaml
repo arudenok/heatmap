@@ -1,0 +1,1083 @@
+openapi: 3.0.3
+info:
+  title: HeatMap Registry API
+  description: Реестр AI-инструментов PDLC
+  version: 0.1.0
+
+servers:
+  - url: /
+
+tags:
+  - name: Auth
+  - name: Tools
+  - name: Admin
+  - name: Impact
+  - name: Notifications
+
+security: []
+
+paths:
+  # ===================== Auth =====================
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Пользователь зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Текущий пользователь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Auth]
+      operationId: updateMe
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Профиль обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  # ===================== Tools =====================
+  /api/tools:
+    get:
+      tags: [Tools]
+      operationId: listTools
+      parameters:
+        - name: tab
+          in: query
+          schema: { type: string, default: TOP }
+        - name: role
+          in: query
+          schema: { type: array, items: { type: string } }
+        - name: framework
+          in: query
+          schema: { type: array, items: { type: string } }
+        - name: constraints
+          in: query
+          schema: { type: array, items: { type: string } }
+        - name: toolType
+          in: query
+          schema: { type: array, items: { type: string } }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Список инструментов
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ToolResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Tools]
+      operationId: createTool
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateToolRequest'
+      responses:
+        '201':
+          description: Инструмент создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/counts:
+    get:
+      tags: [Tools]
+      operationId: getToolCounts
+      responses:
+        '200':
+          description: Счётчики по вкладкам реестра
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolCountsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/stats:
+    get:
+      tags: [Tools]
+      operationId: getToolStats
+      responses:
+        '200':
+          description: Общая статистика реестра
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/filter-options:
+    get:
+      tags: [Tools]
+      operationId: getFilterOptions
+      responses:
+        '200':
+          description: Варианты значений для фильтров
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilterOptionsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/mine:
+    get:
+      tags: [Tools]
+      operationId: listMyTools
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Собственные инструменты пользователя
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ToolResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/downloaded:
+    get:
+      tags: [Tools]
+      operationId: listDownloadedTools
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Скачанные пользователем инструменты
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ToolResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ToolId'
+    get:
+      tags: [Tools]
+      operationId: getTool
+      responses:
+        '200':
+          description: Инструмент
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Tools]
+      operationId: updateTool
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateToolRequest'
+      responses:
+        '200':
+          description: Инструмент обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Tools]
+      operationId: deleteTool
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Инструмент удалён
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/{id}/view:
+    parameters:
+      - $ref: '#/components/parameters/ToolId'
+    post:
+      tags: [Tools]
+      operationId: registerToolView
+      responses:
+        '200':
+          description: Просмотр учтён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/{id}/download:
+    parameters:
+      - $ref: '#/components/parameters/ToolId'
+    post:
+      tags: [Tools]
+      operationId: registerToolDownload
+      responses:
+        '200':
+          description: Скачивание учтено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/{id}/rating:
+    parameters:
+      - $ref: '#/components/parameters/ToolId'
+    post:
+      tags: [Tools]
+      operationId: rateTool
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateToolRequest'
+      responses:
+        '200':
+          description: Оценка сохранена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/tools/{id}/withdraw:
+    parameters:
+      - $ref: '#/components/parameters/ToolId'
+    post:
+      tags: [Tools]
+      operationId: withdrawTool
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Заявка отозвана в черновик
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  # ===================== Admin: moderation & archive =====================
+  /api/admin/tools/pending:
+    get:
+      tags: [Admin]
+      operationId: listPendingTools
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Заявки на модерации
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ToolResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/tools/{id}/approve:
+    post:
+      tags: [Admin]
+      operationId: approveTool
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ToolId'
+      responses:
+        '200':
+          description: Заявка одобрена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/tools/{id}/reject:
+    post:
+      tags: [Admin]
+      operationId: rejectTool
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ToolId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectToolRequest'
+      responses:
+        '200':
+          description: Заявка отклонена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/tools/archived:
+    get:
+      tags: [Admin]
+      operationId: listArchivedTools
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Архивные инструменты
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ToolResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/tools/{id}/archive:
+    post:
+      tags: [Admin]
+      operationId: archiveTool
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ToolId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArchiveToolRequest'
+      responses:
+        '200':
+          description: Инструмент архивирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/tools/{id}/restore:
+    post:
+      tags: [Admin]
+      operationId: restoreTool
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ToolId'
+      responses:
+        '200':
+          description: Инструмент восстановлен из архива
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  # ===================== Admin: notes =====================
+  /api/admin/tools/{toolId}/notes:
+    parameters:
+      - name: toolId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Admin]
+      operationId: listToolNotes
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Заметки к инструменту
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ToolNoteResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Admin]
+      operationId: createToolNote
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateToolNoteRequest'
+      responses:
+        '200':
+          description: Заметка создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolNoteResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/tools/notes/{noteId}:
+    parameters:
+      - name: noteId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Admin]
+      operationId: updateToolNote
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateToolNoteRequest'
+      responses:
+        '200':
+          description: Заметка обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolNoteResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Admin]
+      operationId: deleteToolNote
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Заметка удалена
+        default:
+          $ref: '#/components/responses/Error'
+
+  # ===================== Admin: users =====================
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      operationId: listUsers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Список пользователей
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/users/{id}/role:
+    patch:
+      tags: [Admin]
+      operationId: updateUserRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRoleRequest'
+      responses:
+        '200':
+          description: Роль обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/users/{id}/enabled:
+    patch:
+      tags: [Admin]
+      operationId: updateUserEnabled
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserEnabledRequest'
+      responses:
+        '200':
+          description: Доступ пользователя обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/admin/users/{id}:
+    delete:
+      tags: [Admin]
+      operationId: deleteUser
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Пользователь удалён
+        default:
+          $ref: '#/components/responses/Error'
+
+  # ===================== Admin: impact =====================
+  /api/admin/impact/rows/{id}:
+    patch:
+      tags: [Admin]
+      operationId: updateImpactRow
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateImpactRowRequest'
+      responses:
+        '200':
+          description: Строка метрики обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpactRowResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  # ===================== Impact (public) =====================
+  /api/impact:
+    get:
+      tags: [Impact]
+      operationId: listImpactBlocks
+      responses:
+        '200':
+          description: Блоки метрик влияния
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ImpactBlockResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+
+  # ===================== Notifications =====================
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Уведомления пользователя
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/NotificationResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: getUnreadNotificationCount
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Количество непрочитанных уведомлений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCountResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Уведомление отмечено прочитанным
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Все уведомления отмечены прочитанными
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ToolId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Error:
+      description: Ошибка
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [status, error, message]
+      properties:
+        status: { type: integer }
+        error: { type: string }
+        message: { type: string }
+        fieldErrors:
+          type: object
+          additionalProperties: { type: string }
+        conflictToolId: { type: string, nullable: true }
+        conflictToolName: { type: string, nullable: true }
+
+    # ----- Auth -----
+    RegisterRequest:
+      type: object
+      required: [username, password, fullName]
+      properties:
+        username:
+          type: string
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите логин Сигма") @field:Pattern(regexp = "^[0-9]+$", message = "Логин Сигма должен содержать только цифры") @field:Size(min = 3, max = 255, message = "Логин Сигма должен быть не короче 3 символов")'
+        password:
+          type: string
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите пароль") @field:Size(min = 6, max = 128, message = "Пароль должен быть не короче 6 символов")'
+        fullName:
+          type: string
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите ФИО") @field:Size(min = 3, max = 255, message = "ФИО должно быть не короче 3 символов")'
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите логин Сигма")'
+        password:
+          type: string
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите пароль")'
+
+    MeResponse:
+      type: object
+      required: [id, username, fullName, role]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        fullName: { type: string }
+        role: { type: string }
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/MeResponse' }
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+          x-field-extra-annotation: '@field:Size(max = 255, message = "ФИО: до 255 символов")'
+        username:
+          type: string
+          maxLength: 255
+          x-field-extra-annotation: '@field:Pattern(regexp = "^[0-9]+$", message = "Логин Сигма должен содержать только цифры")'
+        currentPassword: { type: string }
+        newPassword:
+          type: string
+          x-field-extra-annotation: '@field:Size(min = 6, max = 128, message = "Пароль должен быть не короче 6 символов")'
+
+    # ----- Tools -----
+    ToolResponse:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - stage
+        - status
+        - roles
+        - framework
+        - constraints
+        - ownerName
+        - downloads
+        - efficiencyPct
+        - isTop
+        - views
+        - avgRating
+        - ratingsCount
+        - canManage
+        - notesCount
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        shortDescription: { type: string, nullable: true }
+        stage: { type: string }
+        status: { type: string }
+        roles: { type: array, items: { type: string } }
+        framework: { type: array, items: { type: string } }
+        toolType: { type: string, nullable: true }
+        constraints: { type: array, items: { type: string } }
+        sourceLabel: { type: string, nullable: true }
+        ownerName: { type: string }
+        downloads: { type: integer, format: int32 }
+        dau: { type: integer, format: int32, nullable: true }
+        efficiencyPct: { type: integer, format: int32 }
+        isTop: { type: boolean }
+        views: { type: integer, format: int64 }
+        avgRating: { type: number, format: double }
+        ratingsCount: { type: integer, format: int32 }
+        myRating: { type: integer, format: int32, nullable: true }
+        canManage: { type: boolean }
+        rejectionReason: { type: string, nullable: true }
+        notesCount: { type: integer, format: int64 }
+        segment: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    RejectToolRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          maxLength: 1000
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Укажите причину отклонения")'
+
+    ArchiveToolRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 1000, nullable: true }
+
+    RateToolRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: integer
+          format: int32
+          x-field-extra-annotation: '@field:NotNull(message = "Укажите оценку") @field:Min(1, message = "Оценка - от 1 до 5") @field:Max(5, message = "Оценка - от 1 до 5")'
+
+    CreateToolRequest:
+      type: object
+      required: [name, description, roles]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите название инструмента")'
+        shortDescription:
+          type: string
+          nullable: true
+          x-field-extra-annotation: '@field:Size(max = 300, message = "Не более 300 символов")'
+        description:
+          type: string
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите описание")'
+        roles:
+          type: array
+          items: { type: string }
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotEmpty(message = "Выберите хотя бы одну роль")'
+        framework: { type: array, items: { type: string }, default: [] }
+        toolType:
+          type: string
+          nullable: true
+          x-field-extra-annotation: '@field:Size(max = 60, message = "Не более 60 символов")'
+        constraints: { type: array, items: { type: string }, default: [] }
+        sourceLabel:
+          type: string
+          nullable: true
+          x-field-extra-annotation: '@field:Pattern(regexp = "^(?i)https?://(?:[\\w-]+\\.)*(sc-ci|sbrf-bitbucket|stash|confluence|jira|mapp|sbertrack|onework)[\\w.-]*(?::\\d+)?(/.*)?$", message = "Ссылка должна вести на корпоративный сервис (sc-ci, sbrf-bitbucket, stash, confluence, jira, mapp, sbertrack, onework)")'
+        stage: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+
+    UpdateToolRequest:
+      type: object
+      properties:
+        name: { type: string, maxLength: 255 }
+        description: { type: string }
+        shortDescription:
+          type: string
+          nullable: true
+          x-field-extra-annotation: '@field:Size(max = 300, message = "Не более 300 символов")'
+        roles: { type: array, items: { type: string } }
+        framework: { type: array, items: { type: string } }
+        toolType:
+          type: string
+          nullable: true
+          x-field-extra-annotation: '@field:Size(max = 60, message = "Не более 60 символов")'
+        constraints: { type: array, items: { type: string } }
+        sourceLabel:
+          type: string
+          nullable: true
+          x-field-extra-annotation: '@field:Pattern(regexp = "^(?i)https?://(?:[\\w-]+\\.)*(sc-ci|sbrf-bitbucket|stash|confluence|jira|mapp|sbertrack|onework)[\\w.-]*(?::\\d+)?(/.*)?$", message = "Ссылка должна вести на корпоративный сервис (sc-ci, sbrf-bitbucket, stash, confluence, jira, mapp, sbertrack, onework)")'
+        stage: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        downloads: { type: integer, format: int32, minimum: 0 }
+        dau: { type: integer, format: int32, nullable: true }
+        efficiencyPct: { type: integer, format: int32, minimum: 0, maximum: 100 }
+        segment:
+          type: string
+          nullable: true
+          x-field-extra-annotation: '@field:Size(max = 128, message = "Не более 128 символов")'
+
+    ToolCountsResponse:
+      type: object
+      required: [top, access, usage, habit, standard, total]
+      properties:
+        top: { type: integer, format: int64 }
+        access: { type: integer, format: int64 }
+        usage: { type: integer, format: int64 }
+        habit: { type: integer, format: int64 }
+        standard: { type: integer, format: int64 }
+        total: { type: integer, format: int64 }
+
+    FilterOptionsResponse:
+      type: object
+      required: [roles, frameworks, constraints, toolTypes]
+      properties:
+        roles: { type: array, items: { type: string } }
+        frameworks: { type: array, items: { type: string } }
+        constraints: { type: array, items: { type: string } }
+        toolTypes: { type: array, items: { type: string } }
+
+    StatsResponse:
+      type: object
+      required: [totalTools, newThisWeek, accessCount, usageCount, standardCount]
+      properties:
+        totalTools: { type: integer, format: int64 }
+        newThisWeek: { type: integer, format: int64 }
+        accessCount: { type: integer, format: int64 }
+        usageCount: { type: integer, format: int64 }
+        standardCount: { type: integer, format: int64 }
+
+    # ----- Admin: users -----
+    UserResponse:
+      type: object
+      required: [id, username, fullName, role, enabled, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        fullName: { type: string }
+        role: { type: string }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    UpdateUserRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank'
+
+    UpdateUserEnabledRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    # ----- Admin: notes -----
+    ToolNoteResponse:
+      type: object
+      required: [id, toolId, authorId, authorName, text, canManage, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        toolId: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        authorName: { type: string }
+        text: { type: string }
+        canManage: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateToolNoteRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          maxLength: 2000
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите текст заметки")'
+
+    UpdateToolNoteRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          maxLength: 2000
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank(message = "Введите текст заметки")'
+
+    # ----- Impact -----
+    ImpactRowResponse:
+      type: object
+      required: [id, label, value, colorVariant, isFooter]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        value: { type: string }
+        colorVariant: { type: string }
+        isFooter: { type: boolean }
+
+    ImpactBlockResponse:
+      type: object
+      required: [code, icon, title, badgeText, badgeStatus, rows]
+      properties:
+        code: { type: string }
+        icon: { type: string }
+        title: { type: string }
+        badgeText: { type: string }
+        badgeStatus: { type: string }
+        rows: { type: array, items: { $ref: '#/components/schemas/ImpactRowResponse' } }
+
+    UpdateImpactRowRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+          maxLength: 64
+          x-field-extra-annotation: '@field:jakarta.validation.constraints.NotBlank'
+
+    # ----- Notifications -----
+    NotificationResponse:
+      type: object
+      required: [id, type, toolName, message, read, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        toolId: { type: string, format: uuid, nullable: true }
+        toolName: { type: string }
+        message: { type: string }
+        read: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    UnreadCountResponse:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer, format: int64 }

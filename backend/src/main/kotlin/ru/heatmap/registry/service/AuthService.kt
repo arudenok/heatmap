@@ -3,6 +3,7 @@ package ru.heatmap.registry.service
 import ru.heatmap.registry.domain.AppUser
 import ru.heatmap.registry.domain.Role
 import ru.heatmap.registry.dto.*
+import ru.heatmap.registry.mapper.UserMapper
 import ru.heatmap.registry.repository.AppUserRepository
 import ru.heatmap.registry.security.JwtService
 import ru.heatmap.registry.security.UserPrincipal
@@ -23,7 +24,8 @@ class AuthService(
     private val appUserRepository: AppUserRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
-    private val authenticationManager: AuthenticationManager
+    private val authenticationManager: AuthenticationManager,
+    private val userMapper: UserMapper
 ) {
 
     // Логин Сигма - это и есть логин пользователя, отдельного поля под него не заводим:
@@ -37,13 +39,13 @@ class AuthService(
 
         val user = AppUser(
             username = sigmaLogin,
-            passwordHash = passwordEncoder.encode(request.password),
+            passwordHash = passwordEncoder.encode(request.password)!!,
             fullName = request.fullName.trim(),
             role = Role.USER
         )
         val saved = appUserRepository.save(user)
         val token = jwtService.generateToken(saved.username, saved.role.name, saved.id!!)
-        return AuthResponse(token, saved.toMeResponse())
+        return AuthResponse(token, userMapper.toMeResponse(saved))
     }
 
     fun login(request: LoginRequest): AuthResponse {
@@ -59,13 +61,13 @@ class AuthService(
         val user = appUserRepository.findByUsernameIgnoreCase(principal.username)
             ?: throw UnauthorizedException("Пользователь не найден")
         val token = jwtService.generateToken(user.username, user.role.name, user.id!!)
-        return AuthResponse(token, user.toMeResponse())
+        return AuthResponse(token, userMapper.toMeResponse(user))
     }
 
     fun me(username: String): MeResponse {
         val user = appUserRepository.findByUsernameIgnoreCase(username)
             ?: throw UnauthorizedException("Пользователь не найден")
-        return user.toMeResponse()
+        return userMapper.toMeResponse(user)
     }
 
     /**
@@ -101,18 +103,11 @@ class AuthService(
             ) {
                 throw UnauthorizedException("Неверный текущий пароль")
             }
-            user.passwordHash = passwordEncoder.encode(request.newPassword)
+            user.passwordHash = passwordEncoder.encode(request.newPassword)!!
         }
 
         val saved = appUserRepository.save(user)
         val token = jwtService.generateToken(saved.username, saved.role.name, saved.id!!)
-        return AuthResponse(token, saved.toMeResponse())
+        return AuthResponse(token, userMapper.toMeResponse(saved))
     }
 }
-
-fun AppUser.toMeResponse() = MeResponse(
-    id = this.id!!,
-    username = this.username,
-    fullName = this.fullName,
-    role = this.role.name
-)

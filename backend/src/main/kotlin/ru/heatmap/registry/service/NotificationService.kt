@@ -1,11 +1,11 @@
 package ru.heatmap.registry.service
 
 import ru.heatmap.registry.domain.AiTool
-import ru.heatmap.registry.domain.AppUser
 import ru.heatmap.registry.domain.Notification
 import ru.heatmap.registry.domain.NotificationType
 import ru.heatmap.registry.domain.Role
 import ru.heatmap.registry.dto.NotificationResponse
+import ru.heatmap.registry.mapper.NotificationMapper
 import ru.heatmap.registry.repository.AppUserRepository
 import ru.heatmap.registry.repository.NotificationRepository
 import ru.heatmap.registry.security.UserPrincipal
@@ -19,7 +19,8 @@ import java.util.UUID
 @Service
 class NotificationService(
     private val notificationRepository: NotificationRepository,
-    private val appUserRepository: AppUserRepository
+    private val appUserRepository: AppUserRepository,
+    private val notificationMapper: NotificationMapper
 ) {
 
     /** Заявка на модерацию создана - уведомляем всех администраторов. */
@@ -93,7 +94,7 @@ class NotificationService(
 
     @Transactional(readOnly = true)
     fun list(principal: UserPrincipal): List<NotificationResponse> =
-        notificationRepository.findByUserIdOrderByCreatedAtDesc(principal.id).map { it.toResponse() }
+        notificationRepository.findByUserIdOrderByCreatedAtDesc(principal.id).map { notificationMapper.toResponse(it) }
 
     @Transactional(readOnly = true)
     fun unreadCount(principal: UserPrincipal): Long =
@@ -116,27 +117,5 @@ class NotificationService(
         val unread = notificationRepository.findAllByUserIdAndReadFalse(principal.id)
         unread.forEach { it.read = true }
         notificationRepository.saveAll(unread)
-    }
-
-    private fun Notification.toResponse() = NotificationResponse(
-        id = this.id!!,
-        type = this.type.name,
-        toolId = this.toolId,
-        toolName = this.toolName,
-        message = buildMessage(this.type, this.toolName, this.reason),
-        read = this.read,
-        createdAt = this.createdAt
-    )
-
-    private fun buildMessage(type: NotificationType, toolName: String, reason: String?): String = when (type) {
-        NotificationType.NEW_SUBMISSION -> "Новая заявка на модерацию: «$toolName»"
-        NotificationType.SUBMISSION_APPROVED -> "Ваша заявка «$toolName» одобрена и опубликована"
-        NotificationType.SUBMISSION_REJECTED ->
-            if (!reason.isNullOrBlank()) "Ваша заявка «$toolName» отклонена модератором: $reason"
-            else "Ваша заявка «$toolName» отклонена модератором"
-        NotificationType.NEW_TOOL_NOTE -> "Новая заметка к инструменту «$toolName»"
-        NotificationType.TOOL_ARCHIVED ->
-            if (!reason.isNullOrBlank()) "Ваш инструмент «$toolName» архивирован администратором: $reason"
-            else "Ваш инструмент «$toolName» архивирован администратором"
     }
 }

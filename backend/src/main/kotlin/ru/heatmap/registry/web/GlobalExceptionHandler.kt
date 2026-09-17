@@ -1,5 +1,6 @@
 package ru.heatmap.registry.web
 
+import ru.heatmap.registry.dto.ErrorResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.authentication.BadCredentialsException
@@ -8,18 +9,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
+// ErrorResponse - модель, сгенерированная из registry-api.yaml (см. components/schemas/ErrorResponse).
 // conflictToolId/conflictToolName заполнены только для DuplicateSourceLabelException (см. ниже) -
 // фронтенд (AddToolModal) использует их, чтобы показать имя существующего инструмента кликабельной
 // ссылкой на его карточку, а не просто текст ошибки.
-data class ErrorResponse(
-    val status: Int,
-    val error: String,
-    val message: String,
-    val fieldErrors: Map<String, String> = emptyMap(),
-    val conflictToolId: String? = null,
-    val conflictToolName: String? = null
-)
-
 @RestControllerAdvice
 class GlobalExceptionHandler {
 
@@ -32,6 +25,7 @@ class GlobalExceptionHandler {
                 ex.status.value(),
                 ex.status.reasonPhrase,
                 ex.message ?: "Ссылка уже используется",
+                fieldErrors = emptyMap(),
                 conflictToolId = ex.toolId.toString(),
                 conflictToolName = ex.toolName
             )
@@ -40,7 +34,7 @@ class GlobalExceptionHandler {
     @ExceptionHandler(ApiException::class)
     fun handleApiException(ex: ApiException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(ex.status)
-            .body(ErrorResponse(ex.status.value(), ex.status.reasonPhrase, ex.message ?: "Ошибка"))
+            .body(ErrorResponse(ex.status.value(), ex.status.reasonPhrase, ex.message ?: "Ошибка", emptyMap()))
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(ex: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
@@ -54,15 +48,15 @@ class GlobalExceptionHandler {
     @ExceptionHandler(BadCredentialsException::class)
     fun handleBadCredentials(ex: BadCredentialsException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-            .body(ErrorResponse(401, "Unauthorized", "Неверное имя пользователя или пароль"))
+            .body(ErrorResponse(401, "Unauthorized", "Неверное имя пользователя или пароль", emptyMap()))
 
     @ExceptionHandler(AccessDeniedException::class)
     fun handleAccessDenied(ex: AccessDeniedException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.FORBIDDEN)
-            .body(ErrorResponse(403, "Forbidden", "Недостаточно прав для выполнения действия"))
+            .body(ErrorResponse(403, "Forbidden", "Недостаточно прав для выполнения действия", emptyMap()))
 
     @ExceptionHandler(Exception::class)
     fun handleGeneric(ex: Exception): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(ErrorResponse(500, "Internal Server Error", ex.message ?: "Внутренняя ошибка сервера"))
+            .body(ErrorResponse(500, "Internal Server Error", ex.message ?: "Внутренняя ошибка сервера", emptyMap()))
 }

@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.4</version>
+        <version>4.1.0</version>
         <relativePath/>
     </parent>
 
@@ -20,9 +20,12 @@
 
     <properties>
         <java.version>21</java.version>
-        <kotlin.version>1.9.25</kotlin.version>
+        <kotlin.version>2.3.21</kotlin.version>
         <kotlin.code.style>official</kotlin.code.style>
         <jjwt.version>0.12.6</jjwt.version>
+        <openapi-generator.version>7.8.0</openapi-generator.version>
+        <openapi.generated.dir>${project.build.directory}/generated-sources/openapi</openapi.generated.dir>
+        <mapstruct.version>1.6.3</mapstruct.version>
     </properties>
 
     <dependencies>
@@ -54,11 +57,26 @@
             <artifactId>kotlin-reflect</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
+            <groupId>tools.jackson.module</groupId>
             <artifactId>jackson-module-kotlin</artifactId>
         </dependency>
 
-        <!-- DB / Миграции: файловая H2, внешняя СУБД не требуется -->
+        <!-- Маппинг entity -> DTO (см. ru.heatmap.registry.mapper) - реализации генерируются
+             аннотационным процессором (kapt, см. kotlin-maven-plugin ниже) во время сборки. -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <!-- DB / Миграции: файловая H2, внешняя СУБД не требуется.
+             В Spring Boot 4 LiquibaseAutoConfiguration вынесена из общего autoconfigure
+             в отдельный модуль spring-boot-liquibase - без него SpringLiquibase не
+             регистрируется вовсе (миграции молча не применяются на старте). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-liquibase</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
@@ -105,6 +123,52 @@
         <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
         <testSourceDirectory>${project.basedir}/src/test/kotlin</testSourceDirectory>
         <plugins>
+            <!-- Модели DTO и интерфейсы контроллеров генерируются из OpenAPI-спецификации
+                 (src/main/resources/openapi/registry-api.yaml) на фазе generate-sources,
+                 до компиляции Kotlin - см. openapi.generated.dir ниже и delegate-реализации
+                 в ru.heatmap.registry.web (*ApiDelegateImpl). -->
+            <plugin>
+                <groupId>org.openapitools</groupId>
+                <artifactId>openapi-generator-maven-plugin</artifactId>
+                <version>${openapi-generator.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-registry-api</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${project.basedir}/src/main/resources/openapi/registry-api.yaml</inputSpec>
+                            <generatorName>kotlin-spring</generatorName>
+                            <output>${openapi.generated.dir}</output>
+                            <apiPackage>ru.heatmap.registry.web.api</apiPackage>
+                            <modelPackage>ru.heatmap.registry.dto</modelPackage>
+                            <generateApiTests>false</generateApiTests>
+                            <generateModelTests>false</generateModelTests>
+                            <generateApiDocumentation>false</generateApiDocumentation>
+                            <generateModelDocumentation>false</generateModelDocumentation>
+                            <generateSupportingFiles>false</generateSupportingFiles>
+                            <configOptions>
+                                <interfaceOnly>true</interfaceOnly>
+                                <delegatePattern>false</delegatePattern>
+                                <skipDefaultInterface>true</skipDefaultInterface>
+                                <useTags>true</useTags>
+                                <useBeanValidation>true</useBeanValidation>
+                                <useSpringBoot3>true</useSpringBoot3>
+                                <documentationProvider>none</documentationProvider>
+                                <dateLibrary>java8</dateLibrary>
+                                <serializableModel>true</serializableModel>
+                                <openApiNullable>false</openApiNullable>
+                                <enumPropertyNaming>original</enumPropertyNaming>
+                            </configOptions>
+                            <typeMappings>
+                                <typeMapping>DateTime=java.time.Instant</typeMapping>
+                            </typeMappings>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-maven-plugin</artifactId>
@@ -118,8 +182,35 @@
                         <plugin>jpa</plugin>
                     </compilerPlugins>
                     <jvmTarget>21</jvmTarget>
+                    <sourceDirs>
+                        <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>
+                        <sourceDir>${openapi.generated.dir}/src/main/kotlin</sourceDir>
+                    </sourceDirs>
                 </configuration>
                 <executions>
+                    <!-- kapt должен отработать до compile - именно он запускает аннотационный
+                         процессор MapStruct и кладёт сгенерированные *Impl.java в
+                         target/generated-sources/kapt/main (см. maven-compiler-plugin ниже). -->
+                    <execution>
+                        <id>kapt</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>kapt</goal>
+                        </goals>
+                        <configuration>
+                            <sourceDirs>
+                                <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>
+                                <sourceDir>${openapi.generated.dir}/src/main/kotlin</sourceDir>
+                            </sourceDirs>
+                            <annotationProcessorPaths>
+                                <annotationProcessorPath>
+                                    <groupId>org.mapstruct</groupId>
+                                    <artifactId>mapstruct-processor</artifactId>
+                                    <version>${mapstruct.version}</version>
+                                </annotationProcessorPath>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>compile</id>
                         <phase>compile</phase>
@@ -147,6 +238,32 @@
                         <version>${kotlin.version}</version>
                     </dependency>
                 </dependencies>
+            </plugin>
+            <!-- MapStruct-процессор (запущенный через kapt выше) генерирует обычные *Impl.java -
+                 их компилирует уже javac, после того как kotlin-maven-plugin скомпилирует Kotlin
+                 (mapper-интерфейсы и DTO), поэтому default-compile отключён, а свой compile
+                 объявлен ниже kotlin-maven-plugin. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>compile-mapstruct</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <compileSourceRoots>
+                                <compileSourceRoot>${project.build.directory}/generated-sources/kapt/compile</compileSourceRoot>
+                            </compileSourceRoots>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

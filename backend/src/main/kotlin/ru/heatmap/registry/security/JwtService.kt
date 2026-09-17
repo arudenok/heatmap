@@ -35,10 +35,6 @@ class JwtService(private val jwtProperties: JwtProperties) {
         parseClaims(token).subject
     }.getOrNull()
 
-    fun extractRole(token: String): String? = runCatching {
-        parseClaims(token)["role"] as? String
-    }.getOrNull()
-
     fun isTokenValid(token: String, username: String): Boolean = runCatching {
         val claims = parseClaims(token)
         claims.subject == username && claims.expiration.after(Date())

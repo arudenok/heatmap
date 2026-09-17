@@ -1,8 +1,8 @@
 package ru.heatmap.registry.service
 
-import ru.heatmap.registry.domain.AppUser
 import ru.heatmap.registry.domain.Role
 import ru.heatmap.registry.dto.UserResponse
+import ru.heatmap.registry.mapper.UserMapper
 import ru.heatmap.registry.repository.AppUserRepository
 import ru.heatmap.registry.repository.NotificationRepository
 import ru.heatmap.registry.repository.ToolDownloadRepository
@@ -22,22 +22,19 @@ class AdminUserService(
     private val toolRatingRepository: ToolRatingRepository,
     private val toolDownloadRepository: ToolDownloadRepository,
     private val notificationRepository: NotificationRepository,
-    private val toolNoteRepository: ToolNoteRepository
+    private val toolNoteRepository: ToolNoteRepository,
+    private val userMapper: UserMapper
 ) {
 
     /** Список пользователей с опциональным поиском по логину Сигма (=username) или ФИО. */
     fun findAll(search: String? = null): List<UserResponse> {
-        val all = appUserRepository.findAll()
-        val filtered = if (search.isNullOrBlank()) {
-            all
+        val users = if (search.isNullOrBlank()) {
+            appUserRepository.findAll()
         } else {
-            val query = search.trim().lowercase()
-            all.filter { user ->
-                user.username.lowercase().contains(query) ||
-                    user.fullName.lowercase().contains(query)
-            }
+            val query = search.trim()
+            appUserRepository.findByUsernameContainingIgnoreCaseOrFullNameContainingIgnoreCase(query, query)
         }
-        return filtered.map { it.toResponse() }
+        return users.map { userMapper.toUserResponse(it) }
     }
 
     @Transactional
@@ -50,7 +47,7 @@ class AdminUserService(
             throw ConflictException("Нельзя снять с себя права администратора")
         }
         user.role = role
-        return appUserRepository.save(user).toResponse()
+        return userMapper.toUserResponse(appUserRepository.save(user))
     }
 
     @Transactional
@@ -60,7 +57,7 @@ class AdminUserService(
             throw ConflictException("Нельзя заблокировать собственную учётную запись")
         }
         user.enabled = enabled
-        return appUserRepository.save(user).toResponse()
+        return userMapper.toUserResponse(appUserRepository.save(user))
     }
 
     // Удаление аккаунта (например, тестовых/мусорных учёток). Заявки и инструменты
@@ -80,13 +77,4 @@ class AdminUserService(
         toolNoteRepository.deleteAllByAuthorId(userId)
         appUserRepository.delete(user)
     }
-
-    private fun AppUser.toResponse() = UserResponse(
-        id = this.id!!,
-        username = this.username,
-        fullName = this.fullName,
-        role = this.role.name,
-        enabled = this.enabled,
-        createdAt = this.createdAt
-    )
 }
