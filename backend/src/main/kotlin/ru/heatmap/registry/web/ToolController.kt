@@ -17,11 +17,13 @@ class ToolController(private val toolService: ToolService) {
     fun list(
         @RequestParam(defaultValue = "TOP") tab: String,
         @RequestParam(required = false) role: List<String>?,
-        @RequestParam(required = false) framework: String?,
+        @RequestParam(required = false) framework: List<String>?,
+        @RequestParam(required = false) constraints: List<String>?,
+        @RequestParam(required = false) toolType: List<String>?,
         @RequestParam(required = false) search: String?,
         @RequestParam(required = false) sort: String?,
         @AuthenticationPrincipal principal: UserPrincipal?
-    ): List<ToolResponse> = toolService.findByTab(tab, role, framework, search, sort, principal)
+    ): List<ToolResponse> = toolService.findByTab(tab, role, framework, constraints, toolType, search, sort, principal)
 
     @GetMapping("/counts")
     fun counts(): ToolCountsResponse = toolService.counts()
@@ -75,6 +77,12 @@ class ToolController(private val toolService: ToolService) {
         @Valid @RequestBody request: UpdateToolRequest,
         @AuthenticationPrincipal principal: UserPrincipal
     ): ToolResponse = toolService.update(id, request, principal)
+
+    // "Отозвать" в виджете "Мои инструменты на модерации" - переводит собственную заявку
+    // из PENDING в DRAFT вместо безвозвратного удаления (см. ToolService.withdraw).
+    @PostMapping("/{id}/withdraw")
+    fun withdraw(@PathVariable id: UUID, @AuthenticationPrincipal principal: UserPrincipal): ToolResponse =
+        toolService.withdraw(id, principal)
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

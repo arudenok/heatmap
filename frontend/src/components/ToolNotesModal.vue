@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
+import { useConfirm } from '../composables/useConfirm'
 import IconBase from './IconBase.vue'
 
 const props = defineProps({
@@ -8,6 +9,7 @@ const props = defineProps({
 })
 
 const open = defineModel({ default: false })
+const { confirm } = useConfirm()
 
 const notes = ref([])
 const loading = ref(false)
@@ -98,7 +100,8 @@ async function saveEdit(note) {
 }
 
 async function removeNote(note) {
-  if (!confirm('Удалить эту заметку?')) return
+  const ok = await confirm('Удалить эту заметку?', { title: 'Удалить заметку', confirmLabel: 'Удалить' })
+  if (!ok) return
   try {
     await api.delete(`/admin/tools/notes/${note.id}`)
     notes.value = notes.value.filter((n) => n.id !== note.id)

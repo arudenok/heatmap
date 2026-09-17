@@ -23,5 +23,6 @@
     <include file="db/changelog/sql/007-seed-data-for_demo.sql" relativeToChangelogFile="false"/>
     <include file="db/changelog/sql/008-create-notification.sql" relativeToChangelogFile="false"/>
     <include file="db/changelog/sql/009-create-tool-note.sql" relativeToChangelogFile="false"/>
+    <include file="db/changelog/sql/010-create-preset-tables.sql" relativeToChangelogFile="false"/>
 
 </databaseChangeLog>

@@ -138,7 +138,7 @@ defineExpose({ refresh: load })
           <div class="archive-title">{{ tool.name }}</div>
           <div class="archive-tags">
             <span v-for="r in tool.roles" :key="'r-' + r" class="tag">{{ r }}</span>
-            <span v-if="tool.framework" class="tag">{{ tool.framework }}</span>
+            <span v-for="f in tool.framework" :key="'f-' + f" class="tag">{{ f }}</span>
             <span class="tag">👤 {{ tool.ownerName }}</span>
           </div>
         </div>

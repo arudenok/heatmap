@@ -69,7 +69,9 @@ function formatCompact(n) {
       <div class="tool-desc">
         <span class="tool-desc-text" :title="tool.description">{{ cardDescription(tool) }}</span>
         <span v-for="r in tool.roles" :key="r" class="tag">{{ r }}</span>
-        <span v-if="tool.framework" class="tag">{{ tool.framework }}</span>
+        <span v-for="f in tool.framework" :key="f" class="tag">{{ f }}</span>
+        <span v-if="tool.toolType" class="tag">{{ tool.toolType }}</span>
+        <span v-for="c in tool.constraints" :key="c" class="tag">{{ c }}</span>
       </div>
       <div class="tool-meta">
         <span><IconBase name="user" :size="13" /> {{ tool.ownerName }}</span>

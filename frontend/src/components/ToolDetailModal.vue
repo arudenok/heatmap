@@ -156,9 +156,12 @@ function formatDate(value) {
 
       <div class="detail-tags">
         <span v-for="r in tool.roles" :key="'r-' + r" class="tag">{{ r }}</span>
-        <span v-if="tool.framework" class="tag">{{ tool.framework }}</span>
-        <span v-if="tool.constraints" class="tag">{{ tool.constraints }}</span>
-        <span class="tag">{{ tool.sourceLabel }}</span>
+        <span v-for="f in tool.framework" :key="'f-' + f" class="tag">{{ f }}</span>
+        <span v-if="tool.toolType" class="tag">{{ tool.toolType }}</span>
+        <span v-for="c in tool.constraints" :key="'c-' + c" class="tag">{{ c }}</span>
+        <!-- Ссылка теперь необязательна (для админа, см. ToolService.create) - пустой tag
+             без v-if рисовался бы даже когда ссылки нет. -->
+        <span v-if="tool.sourceLabel" class="tag">{{ tool.sourceLabel }}</span>
       </div>
 
       <div v-if="auth.isAdmin" class="detail-notes-row">
@@ -223,8 +226,19 @@ function formatDate(value) {
           </button>
         </div>
         <div class="modal-actions-right">
-          <button type="button" class="btn btn-primary" @click="onDownload">
-            <IconBase name="download" :size="14" /> Скачать
+          <!-- Если ссылки на источник нет (админ мог создать карточку без неё - см.
+               ToolService.create), кнопка не подсвечивается как основное действие,
+               блокируется и подсказывает, что ссылки нет (title-тултип + другой текст). -->
+          <button
+            type="button"
+            class="btn"
+            :class="tool.sourceLabel ? 'btn-primary' : 'btn-outline'"
+            :disabled="!tool.sourceLabel"
+            :title="tool.sourceLabel ? '' : 'Ссылка на инструмент не указана'"
+            @click="onDownload"
+          >
+            <IconBase name="download" :size="14" />
+            {{ tool.sourceLabel ? 'Скачать' : 'Ссылка не указана' }}
           </button>
         </div>
       </div>

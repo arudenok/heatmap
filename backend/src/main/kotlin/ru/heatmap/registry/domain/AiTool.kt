@@ -41,20 +41,37 @@ class AiTool(
     @Column(name = "role", nullable = false, length = 64)
     var roles: MutableSet<String> = mutableSetOf(),
 
-    // Необязательное поле (раньше было обязательным) - не у каждого инструмента есть
-    // выраженный агентский фреймворк.
-    @Column(length = 64)
-    var framework: String? = null,
+    // Агентский фреймворк - множественный (как roles/constraints выше - инструмент может
+    // использовать сразу несколько), поэтому тоже отдельная таблица "многие-ко-многим"
+    // tool_framework, а не колонка в ai_tool. Необязательное поле - список может быть пустым
+    // (раньше было одно обязательное значение).
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "tool_framework", joinColumns = [JoinColumn(name = "tool_id")])
+    @Column(name = "framework", nullable = false, length = 64)
+    var framework: MutableSet<String> = mutableSetOf(),
 
-    // Ограничения - свободный текст с автодополнением на фронтенде (см. FilterOptionsResponse.constraints),
-    // необязательное поле. Пришло на смену полю "Сегмент" (см. историю - убрано полностью по просьбе).
-    // Колонка называется tool_constraints, а не constraints - это слово зарезервировано в SQL
-    // (используется в конструкции SET CONSTRAINTS), безопаснее не рисковать с движком БД.
-    @Column(name = "tool_constraints", length = 500)
-    var constraints: String? = null,
+    // Тип инструмента - категория из фиксированного набора (см. ToolService.TOOL_TYPE_OPTIONS:
+    // Skill/MCP/Agent/Harness/Tool/Framework/Другое). Необязательное поле, свободный VARCHAR,
+    // а не enum - список категорий может меняться, отдельная миграция под каждое изменение не нужна.
+    @Column(name = "tool_type", length = 32)
+    var toolType: String? = null,
 
-    @Column(name = "source_label", nullable = false, length = 128)
-    var sourceLabel: String,
+    // Ограничения - множественные (как и roles выше - инструмент может подпадать сразу под
+    // несколько), поэтому тоже вынесены в отдельную таблицу "многие-ко-многим" tool_constraint
+    // (см. 003-create-tool-role-segment.sql), а не колонка в ai_tool. Пришло на смену полю
+    // "Сегмент" (см. историю - убрано полностью по просьбе). Поле в этой таблице называется
+    // constraint_value, а не constraint - это слово зарезервировано в SQL.
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "tool_constraint", joinColumns = [JoinColumn(name = "tool_id")])
+    @Column(name = "constraint_value", nullable = false, length = 128)
+    var constraints: MutableSet<String> = mutableSetOf(),
+
+    // Ссылка необязательна для администратора - он может завести карточку до появления
+    // публичной ссылки (см. ToolService.create/update и ToolDetailModal - кнопка "Скачать"
+    // тогда показывает, что ссылки нет). Для обычного пользователя обязательность
+    // проверяется на уровне сервиса, а не аннотацией, т.к. правило зависит от роли.
+    @Column(name = "source_label", length = 128)
+    var sourceLabel: String? = null,
 
     @Column(name = "owner_name", nullable = false)
     var ownerName: String,
@@ -104,6 +121,11 @@ enum class ToolStage {
     ACCESS, USAGE, HABIT, STANDARD
 }
 
+// DRAFT - автор отозвал свою заявку с модерации (см. ToolService.withdraw); инструмент в этом
+// статусе не виден никому, кроме самого автора (вкладка "Черновики" в "Мои инструменты"), и не
+// участвует ни в одной выборке реестра. Из черновика можно либо удалить инструмент насовсем,
+// либо отредактировать и отправить повторно - тогда статус меняется на PENDING (см.
+// ToolService.update, shouldResubmitOnEdit).
 enum class ToolStatus {
-    PENDING, PUBLISHED, REJECTED, ARCHIVED
+    PENDING, PUBLISHED, REJECTED, ARCHIVED, DRAFT
 }

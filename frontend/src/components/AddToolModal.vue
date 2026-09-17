@@ -4,12 +4,13 @@ import api, { extractErrorMessage } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import IconBase from './IconBase.vue'
 import MultiSelectDropdown from './MultiSelectDropdown.vue'
-import ComboboxInput from './ComboboxInput.vue'
+import SelectDropdown from './SelectDropdown.vue'
+import ToolDetailModal from './ToolDetailModal.vue'
 
 const auth = useAuthStore()
 
 const props = defineProps({
-  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], constraints: [] }) },
+  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], constraints: [], toolTypes: [] }) },
   // Если передан - модалка работает в режиме редактирования уже существующей заявки
   // (PATCH вместо POST), а не создания новой.
   editTool: { type: Object, default: null }
@@ -23,11 +24,13 @@ const isEditMode = computed(() => !!props.editTool)
 // правки последнего от имени автора (не администратора) отправляют его на повторную модерацию,
 // поэтому тексты подписей отличаются.
 const isPendingEdit = computed(() => isEditMode.value && props.editTool?.status === 'PENDING')
+// DRAFT - тот же случай, что PUBLISHED/REJECTED: автор правит инструмент, отозванный с
+// модерации (см. ToolService.update/shouldResubmitOnEdit), и правка отправляет его повторно.
 const isResubmitEdit = computed(
   () =>
     isEditMode.value &&
     !auth.isAdmin &&
-    (props.editTool?.status === 'PUBLISHED' || props.editTool?.status === 'REJECTED')
+    ['PUBLISHED', 'REJECTED', 'DRAFT'].includes(props.editTool?.status)
 )
 
 // Этап зрелости и статус в форме создания доступны только администратору (см. admin-params-box
@@ -49,17 +52,30 @@ const STATUS_OPTIONS = [
 const STATUS_OPTIONS_EDIT = [
   ...STATUS_OPTIONS,
   { value: 'REJECTED', label: 'Отклонён' },
-  { value: 'ARCHIVED', label: 'Архивирован' }
+  { value: 'ARCHIVED', label: 'Архивирован' },
+  { value: 'DRAFT', label: 'Черновик' }
 ]
 const statusOptions = computed(() => (isEditMode.value ? STATUS_OPTIONS_EDIT : STATUS_OPTIONS))
+
+// Тип инструмента - необязательная категория. Базовый набор приходит с бэкенда
+// (filterOptions.toolTypes - см. ToolService.filterOptions/TOOL_TYPE_OPTIONS в ToolDtos.kt)
+// плюс любые уже сохранённые "свои варианты" администратора (см. allow-custom у SelectDropdown
+// ниже - тот же принцип, что и allow-custom у MultiSelectDropdown для роли/ограничений).
+// "Не указан" в список не входит - это состояние "ничего не выбрано" у самого SelectDropdown,
+// добавляем его явным элементом с value: '', как раньше делали через <option value="">.
+const TOOL_TYPE_SELECT_OPTIONS = computed(() => [
+  { value: '', label: 'Не указан' },
+  ...props.filterOptions.toolTypes.map((opt) => ({ value: opt, label: opt }))
+])
 
 const form = reactive({
   name: '',
   shortDescription: '',
   description: '',
   roles: [],
-  framework: '',
-  constraints: '',
+  framework: [],
+  toolType: '',
+  constraints: [],
   sourceLabel: '',
   stage: 'ACCESS',
   status: 'PENDING',
@@ -76,6 +92,26 @@ const form = reactive({
 const loading = ref(false)
 const error = ref('')
 
+// Заполняется, когда сервер отклоняет сохранение из-за дубликата "Ссылки на инструмент"
+// (см. ToolService.create/update - DuplicateSourceLabelException, только среди активных
+// карточек). Вместо обычного текста ошибки показываем кликабельное имя существующего
+// инструмента - клик открывает его карточку в отдельной ToolDetailModal прямо поверх этой формы.
+const duplicateTool = ref(null)
+const duplicateDetailOpen = ref(false)
+const duplicateDetailTool = ref(null)
+
+async function openDuplicateTool() {
+  if (!duplicateTool.value) return
+  try {
+    const { data } = await api.get(`/tools/${duplicateTool.value.id}`)
+    duplicateDetailTool.value = data
+    duplicateDetailOpen.value = true
+  } catch {
+    // если карточка вдруг недоступна (например, удалена) - молча ничего не открываем,
+    // само предупреждение с именем всё равно остаётся видно
+  }
+}
+
 // При открытии модалки в режиме редактирования - подставляем текущие данные заявки в форму.
 watch(
   () => [open.value, props.editTool],
@@ -86,9 +122,10 @@ watch(
       form.shortDescription = tool.shortDescription || ''
       form.description = tool.description
       form.roles = [...tool.roles]
-      form.framework = tool.framework || ''
-      form.constraints = tool.constraints || ''
-      form.sourceLabel = tool.sourceLabel
+      form.framework = [...(tool.framework || [])]
+      form.toolType = tool.toolType || ''
+      form.constraints = [...(tool.constraints || [])]
+      form.sourceLabel = tool.sourceLabel || ''
       // Этап/статус/метрики - только для отображения и редактирования администратором
       // (см. admin-params-box), но подставляем их независимо от роли - не отправятся,
       // если auth.isAdmin === false (см. onSubmit).
@@ -125,11 +162,17 @@ const URL_PATTERN = new RegExp(
 
 function clearFieldError(field) {
   invalidFields[field] = false
+  // Как только ссылку снова редактируют - прошлое предупреждение о дубликате уже не
+  // актуально (пользователь мог изменить её на другую).
+  if (field === 'sourceLabel') {
+    duplicateTool.value = null
+  }
 }
 
 function close() {
   open.value = false
   error.value = ''
+  duplicateTool.value = null
 }
 
 function resetForm() {
@@ -137,8 +180,9 @@ function resetForm() {
   form.shortDescription = ''
   form.description = ''
   form.roles = []
-  form.framework = ''
-  form.constraints = ''
+  form.framework = []
+  form.toolType = ''
+  form.constraints = []
   form.sourceLabel = ''
   form.stage = 'ACCESS'
   form.status = 'PENDING'
@@ -147,23 +191,28 @@ function resetForm() {
   form.efficiencyPct = 0
   form.segment = ''
   Object.keys(invalidFields).forEach((key) => (invalidFields[key] = false))
+  duplicateTool.value = null
 }
 
 function validate() {
   const sourceTrimmed = form.sourceLabel.trim()
   const sourceEmpty = !sourceTrimmed
+  // Ссылка обязательна для обычного пользователя, но необязательна для администратора -
+  // он может завести карточку до появления публичной ссылки (см. ToolService.create/update
+  // и кнопку "Скачать" в ToolDetailModal, которая тогда подсказывает, что ссылки нет).
+  const sourceRequired = !auth.isAdmin
   const sourceBadFormat = !sourceEmpty && !URL_PATTERN.test(sourceTrimmed)
 
   invalidFields.name = !form.name.trim()
   invalidFields.description = !form.description.trim()
   invalidFields.roles = !form.roles.length
-  invalidFields.sourceLabel = sourceEmpty || sourceBadFormat
+  invalidFields.sourceLabel = (sourceRequired && sourceEmpty) || sourceBadFormat
 
   const hasEmptyRequired =
     invalidFields.name ||
     invalidFields.description ||
     invalidFields.roles ||
-    sourceEmpty
+    (sourceRequired && sourceEmpty)
 
   if (hasEmptyRequired) {
     error.value = 'Заполните все обязательные поля, отмеченные *'
@@ -178,6 +227,7 @@ function validate() {
 
 async function onSubmit() {
   error.value = ''
+  duplicateTool.value = null
   if (!validate()) return
 
   loading.value = true
@@ -187,9 +237,10 @@ async function onSubmit() {
       shortDescription: form.shortDescription.trim() || null,
       description: form.description,
       roles: form.roles,
-      framework: form.framework.trim() || null,
-      constraints: form.constraints.trim() || null,
-      sourceLabel: form.sourceLabel
+      framework: form.framework,
+      toolType: form.toolType || null,
+      constraints: form.constraints,
+      sourceLabel: form.sourceLabel.trim() || null
     }
     // "Параметры администратора" (этап/статус) отправляются и при создании, и при редактировании -
     // при редактировании администратору дополнительно доступны метрики влияния (см. admin-params-box).
@@ -216,7 +267,16 @@ async function onSubmit() {
     resetForm()
     open.value = false
   } catch (e) {
-    error.value = extractErrorMessage(e, isEditMode.value ? 'Не удалось сохранить изменения' : 'Не удалось отправить заявку')
+    // Дубликат "Ссылки на инструмент" (см. ToolService.create/update) - сервер отвечает 409
+    // с id и именем существующего инструмента (см. GlobalExceptionHandler/ErrorResponse) -
+    // вместо обычного текста ошибки показываем кликабельное имя (см. duplicateTool в шаблоне).
+    const conflictId = e?.response?.status === 409 ? e.response.data?.conflictToolId : null
+    if (conflictId) {
+      duplicateTool.value = { id: conflictId, name: e.response.data?.conflictToolName || '' }
+      invalidFields.sourceLabel = true
+    } else {
+      error.value = extractErrorMessage(e, isEditMode.value ? 'Не удалось сохранить изменения' : 'Не удалось отправить заявку')
+    }
   } finally {
     loading.value = false
   }
@@ -289,53 +349,69 @@ async function onSubmit() {
           ></textarea>
         </div>
 
-        <div class="form-row">
-          <div class="field">
-            <label for="tool-role">Роль / направление <span class="required">*</span></label>
-            <MultiSelectDropdown
-              id="tool-role"
-              v-model="form.roles"
-              :options="filterOptions.roles"
-              all-label="Выберите роли"
-              :invalid="invalidFields.roles"
-              :allow-custom="auth.isAdmin"
-              @update:model-value="clearFieldError('roles')"
-            />
-          </div>
-          <div class="field">
-            <label for="tool-framework">Агентский фреймворк</label>
-            <ComboboxInput
-              id="tool-framework"
-              v-model="form.framework"
-              :options="filterOptions.frameworks"
-              placeholder="Выберите или введите своё (необязательно)"
-            />
-          </div>
+        <div class="field">
+          <label for="tool-type">Тип инструмента</label>
+          <SelectDropdown
+            id="tool-type"
+            v-model="form.toolType"
+            :options="TOOL_TYPE_SELECT_OPTIONS"
+            :allow-custom="auth.isAdmin"
+          />
         </div>
 
-        <div class="form-row">
-          <div class="field">
-            <label for="tool-constraints">Ограничения</label>
-            <ComboboxInput
-              id="tool-constraints"
-              v-model="form.constraints"
-              :options="filterOptions.constraints"
-              placeholder="Например: только backend-сервисы (необязательно)"
-            />
-          </div>
-          <div class="field">
-            <label for="tool-source">Ссылка на инструмент <span class="required">*</span></label>
-            <input
-              id="tool-source"
-              v-model="form.sourceLabel"
-              class="input"
-              :class="{ 'input-invalid': invalidFields.sourceLabel }"
-              type="text"
-              :placeholder="invalidFields.sourceLabel ? 'Обязательное поле' : 'https://…'"
-              @input="clearFieldError('sourceLabel')"
-            />
-            <p class="field-hint">Только корпоративные сервисы: sc-ci, sbrf-bitbucket, stash, confluence, jira, mapp, sbertrack, onework</p>
-          </div>
+        <div class="field">
+          <label for="tool-role">Роль / направление <span class="required">*</span></label>
+          <MultiSelectDropdown
+            id="tool-role"
+            v-model="form.roles"
+            :options="filterOptions.roles"
+            all-label="Выберите роли"
+            :invalid="invalidFields.roles"
+            :allow-custom="auth.isAdmin"
+            @update:model-value="clearFieldError('roles')"
+          />
+        </div>
+        <div class="field">
+          <label for="tool-framework">Агентский фреймворк</label>
+          <MultiSelectDropdown
+            id="tool-framework"
+            v-model="form.framework"
+            :options="filterOptions.frameworks"
+            all-label="Выберите фреймворки (необязательно)"
+            :allow-custom="auth.isAdmin"
+          />
+        </div>
+
+        <div class="field">
+          <label for="tool-constraints">Ограничения</label>
+          <MultiSelectDropdown
+            id="tool-constraints"
+            v-model="form.constraints"
+            :options="filterOptions.constraints"
+            all-label="Выберите ограничения (необязательно)"
+            :allow-custom="auth.isAdmin"
+          />
+        </div>
+        <div class="field">
+          <label for="tool-source">
+            Ссылка на инструмент <span v-if="!auth.isAdmin" class="required">*</span>
+          </label>
+          <input
+            id="tool-source"
+            v-model="form.sourceLabel"
+            class="input"
+            :class="{ 'input-invalid': invalidFields.sourceLabel }"
+            type="text"
+            :placeholder="
+              invalidFields.sourceLabel && !auth.isAdmin
+                ? 'Обязательное поле'
+                : auth.isAdmin
+                ? 'https://… (необязательно для администратора)'
+                : 'https://…'
+            "
+            @input="clearFieldError('sourceLabel')"
+          />
+          <p class="field-hint">Только корпоративные сервисы: sc-ci, sbrf-bitbucket, stash, confluence, jira, mapp, sbertrack, onework</p>
         </div>
 
         <!-- Этап и статус доступны администратору и при создании, и при редактировании (см.
@@ -345,29 +421,21 @@ async function onSubmit() {
              инструмента - у только что создаваемого их взять неоткуда. -->
         <div v-if="auth.isAdmin" class="admin-params-box">
           <div class="admin-params-title"><IconBase name="shield" :size="13" /> Параметры администратора</div>
-          <div class="form-row">
-            <div class="field">
-              <label for="tool-stage">Этап зрелости</label>
-              <select id="tool-stage" v-model="form.stage" class="input">
-                <option v-for="opt in STAGE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="tool-status">Статус</label>
-              <select id="tool-status" v-model="form.status" class="input">
-                <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
+          <div class="field">
+            <label for="tool-stage">Этап зрелости</label>
+            <SelectDropdown id="tool-stage" v-model="form.stage" :options="STAGE_OPTIONS" />
           </div>
-          <div v-if="isEditMode" class="form-row">
-            <div class="field">
-              <label for="tool-downloads">Скачиваний</label>
-              <input id="tool-downloads" v-model.number="form.downloads" class="input" type="number" min="0" />
-            </div>
-            <div class="field">
-              <label for="tool-dau">DAU</label>
-              <input id="tool-dau" v-model="form.dau" class="input" type="number" min="0" placeholder="не задано" />
-            </div>
+          <div class="field">
+            <label for="tool-status">Статус</label>
+            <SelectDropdown id="tool-status" v-model="form.status" :options="statusOptions" />
+          </div>
+          <div v-if="isEditMode" class="field">
+            <label for="tool-downloads">Скачиваний</label>
+            <input id="tool-downloads" v-model.number="form.downloads" class="input" type="number" min="0" />
+          </div>
+          <div v-if="isEditMode" class="field">
+            <label for="tool-dau">DAU</label>
+            <input id="tool-dau" v-model="form.dau" class="input" type="number" min="0" placeholder="не задано" />
           </div>
           <div v-if="isEditMode" class="field">
             <label for="tool-efficiency">Эффективность, %</label>
@@ -390,6 +458,10 @@ async function onSubmit() {
         </div>
 
         <p v-if="error" class="error-text">{{ error }}</p>
+        <p v-if="duplicateTool" class="error-text">
+          Такая ссылка уже используется инструментом
+          <button type="button" class="link-btn" @click="openDuplicateTool">{{ duplicateTool.name }}</button>
+        </p>
 
         <div class="modal-actions">
           <button type="submit" class="btn btn-primary" :disabled="loading">
@@ -405,6 +477,11 @@ async function onSubmit() {
       </form>
     </div>
   </div>
+
+  <!-- Карточка инструмента-владельца дублирующейся ссылки (см. duplicateTool/openDuplicateTool
+       выше) - отдельная модалка поверх этой формы, вне .modal-backdrop, иначе клики внутри неё
+       всплывали бы до @click.self этой формы и закрывали её вместе с карточкой. -->
+  <ToolDetailModal v-model="duplicateDetailOpen" :tool="duplicateDetailTool" />
 </template>
 
 <style scoped>
@@ -467,16 +544,24 @@ async function onSubmit() {
   gap: 14px;
 }
 
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
 .field-hint {
   margin: 2px 0 0;
   font-size: 11.5px;
   color: var(--text-muted);
+}
+
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover {
+  color: var(--accent-dark);
 }
 
 .input-invalid {
@@ -517,11 +602,4 @@ async function onSubmit() {
   letter-spacing: 0.3px;
 }
 
-.admin-params-box .form-row {
-  margin: 0;
-}
-
-@media (max-width: 520px) {
-  .form-row { grid-template-columns: 1fr; }
-}
 </style>

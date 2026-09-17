@@ -180,8 +180,8 @@ defineExpose({ refresh: load })
           <div class="moderation-desc">{{ tool.shortDescription || tool.description }}</div>
           <div class="moderation-tags">
             <span v-for="r in tool.roles" :key="'r-' + r" class="tag">{{ r }}</span>
-            <span v-if="tool.framework" class="tag">{{ tool.framework }}</span>
-            <span v-if="tool.constraints" class="tag">{{ tool.constraints }}</span>
+            <span v-for="f in tool.framework" :key="'f-' + f" class="tag">{{ f }}</span>
+            <span v-for="c in tool.constraints" :key="'c-' + c" class="tag">{{ c }}</span>
             <span class="tag">👤 {{ tool.ownerName }}</span>
           </div>
         </div>

@@ -4,11 +4,14 @@ import ru.heatmap.registry.domain.*
 import ru.heatmap.registry.dto.*
 import ru.heatmap.registry.repository.AiToolRepository
 import ru.heatmap.registry.repository.AppUserRepository
+import ru.heatmap.registry.repository.PresetConstraintRepository
+import ru.heatmap.registry.repository.PresetRoleRepository
 import ru.heatmap.registry.repository.ToolDownloadRepository
 import ru.heatmap.registry.repository.ToolNoteRepository
 import ru.heatmap.registry.repository.ToolRatingRepository
 import ru.heatmap.registry.security.UserPrincipal
 import ru.heatmap.registry.web.BadRequestException
+import ru.heatmap.registry.web.DuplicateSourceLabelException
 import ru.heatmap.registry.web.ForbiddenException
 import ru.heatmap.registry.web.NotFoundException
 import org.springframework.data.jpa.domain.Specification
@@ -19,6 +22,11 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
+// "Ссылка на инструмент" должна быть уникальна, но только среди активных карточек - отклонённые
+// и архивные не учитываются (см. AiToolRepository.findFirstBySourceLabelAndStatusIn), чтобы ту же
+// ссылку можно было завести заново в новой заявке после отклонения/архивации прежней.
+private val ACTIVE_SOURCE_LABEL_STATUSES = listOf(ToolStatus.PENDING, ToolStatus.PUBLISHED)
+
 @Service
 class ToolService(
     private val aiToolRepository: AiToolRepository,
@@ -26,6 +34,8 @@ class ToolService(
     private val toolRatingRepository: ToolRatingRepository,
     private val toolDownloadRepository: ToolDownloadRepository,
     private val toolNoteRepository: ToolNoteRepository,
+    private val presetRoleRepository: PresetRoleRepository,
+    private val presetConstraintRepository: PresetConstraintRepository,
     private val notificationService: NotificationService
 ) {
 
@@ -33,7 +43,9 @@ class ToolService(
     fun findByTab(
         tab: String,
         roles: List<String>?,
-        framework: String?,
+        framework: List<String>?,
+        constraints: List<String>?,
+        toolType: List<String>?,
         search: String?,
         sort: String?,
         principal: UserPrincipal?
@@ -45,7 +57,15 @@ class ToolService(
             statusSpec(ToolStatus.PUBLISHED),
             tabSpec(tab, topIds),
             collectionContainsAnySpec("roles", roles),
-            equalsSpec("framework", framework),
+            // "Агентский фреймворк" и "Ограничения" - тоже коллекции, как и roles
+            // (см. AiTool.framework/constraints), поэтому та же логика "содержит хотя бы
+            // одно из выбранных значений".
+            collectionContainsAnySpec("framework", framework),
+            collectionContainsAnySpec("constraints", constraints),
+            // "Тип инструмента" - у самого инструмента единственное значение (см. AiTool.toolType),
+            // но в фильтре можно выбрать сразу несколько - совпадение с любым из них, как и у
+            // ролей/фреймворка/ограничений выше, только без join (не коллекция, а обычная колонка).
+            toolTypeSpec(toolType),
             searchSpec(search)
         ).fold(Specification.where<AiTool>(null)) { acc, next -> acc.and(next) }
         return aiToolRepository.findAll(spec, resolveSort(sort)).map { it.toResponse(principal, topIds) }
@@ -128,13 +148,26 @@ class ToolService(
 
     fun filterOptions(): FilterOptionsResponse {
         val all = aiToolRepository.findAll()
+        // Базовые наборы (preset_role/preset_constraint - см. 010-create-preset-tables.sql)
+        // видны в форме/фильтре всегда, даже если ни один инструмент ещё не использует
+        // конкретное значение - плюс любые дополнительные значения, которые уже реально
+        // использованы (например, введены администратором как "свой вариант" -
+        // см. MultiSelectDropdown.allowCustom).
+        val presetRoles = presetRoleRepository.findAll().map { it.role }
+        val presetConstraints = presetConstraintRepository.findAll().map { it.value }
         return FilterOptionsResponse(
-            roles = all.flatMap { it.roles }.distinct().sorted(),
-            // Фреймворк теперь необязателен - как и "Ограничения", в список автодополнения/фильтра
-            // попадают только реально заполненные значения.
-            frameworks = all.mapNotNull { it.framework }.filter { it.isNotBlank() }.distinct().sorted(),
-            // Подсказки для автодополнения - только ранее реально введённые значения, без пустых.
-            constraints = all.mapNotNull { it.constraints }.filter { it.isNotBlank() }.distinct().sorted()
+            roles = (presetRoles + all.flatMap { it.roles }).filter { it.isNotBlank() }.distinct().sorted(),
+            // Фреймворк - множественное поле, как и "Ограничения" (см. AiTool.framework), в
+            // список автодополнения/фильтра попадают только реально заполненные значения.
+            // У фреймворка (в отличие от роли и ограничений) нет фиксированного базового набора.
+            frameworks = all.flatMap { it.framework }.filter { it.isNotBlank() }.distinct().sorted(),
+            constraints = (presetConstraints + all.flatMap { it.constraints }.filter { it.isNotBlank() })
+                .distinct().sorted(),
+            // Базовый набор TOOL_TYPE_OPTIONS (см. ToolDtos.kt) плюс реально сохранённые значения -
+            // включая "свой вариант", который администратор мог ввести вручную (см.
+            // AddToolModal/SelectDropdown.allowCustom), как и с ролями/ограничениями выше.
+            toolTypes = (TOOL_TYPE_OPTIONS + all.mapNotNull { it.toolType }.filter { it.isNotBlank() })
+                .distinct().sorted()
         )
     }
 
@@ -147,6 +180,18 @@ class ToolService(
     fun create(request: CreateToolRequest, principal: UserPrincipal): ToolResponse {
         val owner = appUserRepository.findByIdOrNull(principal.id) ?: throw NotFoundException("Пользователь не найден")
         val isAdmin = principal.role == "ADMIN"
+
+        // Ссылка на инструмент обязательна для обычного пользователя, но необязательна для
+        // администратора - он может завести карточку до появления публичной ссылки
+        // (см. AiTool.sourceLabel/ToolCard - кнопка "Скачать" тогда показывает, что ссылки нет).
+        if (!isAdmin && request.sourceLabel.isNullOrBlank()) {
+            throw BadRequestException("Введите ссылку на инструмент")
+        }
+        val trimmedSourceLabel = request.sourceLabel?.trim()?.takeIf { it.isNotBlank() }
+        if (trimmedSourceLabel != null) {
+            aiToolRepository.findFirstBySourceLabelAndStatusIn(trimmedSourceLabel, ACTIVE_SOURCE_LABEL_STATUSES)
+                ?.let { throw DuplicateSourceLabelException(it.id!!, it.name) }
+        }
 
         // Обычный пользователь всегда создаёт заявку на модерацию с этапом Access - stage/status
         // из запроса ему не доступны. Администратор может сразу выставить этап и статус
@@ -173,9 +218,10 @@ class ToolService(
             stage = stage,
             status = status,
             roles = request.roles.toMutableSet(),
-            framework = request.framework?.trim()?.takeIf { it.isNotBlank() },
-            constraints = request.constraints?.trim()?.takeIf { it.isNotBlank() },
-            sourceLabel = request.sourceLabel,
+            framework = request.framework.map { it.trim() }.filter { it.isNotBlank() }.toMutableSet(),
+            toolType = request.toolType?.trim()?.takeIf { it.isNotBlank() },
+            constraints = request.constraints.map { it.trim() }.filter { it.isNotBlank() }.toMutableSet(),
+            sourceLabel = trimmedSourceLabel,
             ownerName = owner.fullName,
             createdBy = owner
         )
@@ -198,20 +244,35 @@ class ToolService(
         if (!isAdmin && !isOwner) {
             throw ForbiddenException("Недостаточно прав для редактирования этого инструмента")
         }
-        // Автор может редактировать инструмент в любом статусе (PENDING/PUBLISHED/REJECTED) -
-        // правки уже опубликованного или отклонённого инструмента отправляют его на повторную
-        // модерацию (см. ниже), поэтому запрещать редактирование по статусу больше не нужно.
-        val wasPublishedOrRejected = tool.status == ToolStatus.PUBLISHED || tool.status == ToolStatus.REJECTED
+        // Автор может редактировать инструмент в любом статусе (PENDING/PUBLISHED/REJECTED/DRAFT) -
+        // правки уже опубликованного, отклонённого или отозванного в черновик инструмента
+        // отправляют его на повторную модерацию (см. ниже), поэтому запрещать редактирование
+        // по статусу больше не нужно.
+        val shouldResubmitOnEdit =
+            tool.status == ToolStatus.PUBLISHED || tool.status == ToolStatus.REJECTED || tool.status == ToolStatus.DRAFT
 
         request.name?.let { tool.name = it.trim() }
         request.description?.let { tool.description = it.trim() }
         request.shortDescription?.let { tool.shortDescription = it.trim().takeIf { s -> s.isNotBlank() } }
         request.roles?.let { tool.roles = it.toMutableSet() }
-        // Фреймворк необязателен - как и "Ограничения" выше, пустая строка сохраняется как null
-        // (см. AiTool.framework / CreateToolRequest.framework).
-        request.framework?.let { tool.framework = it.trim().takeIf { s -> s.isNotBlank() } }
-        request.constraints?.let { tool.constraints = it.trim().takeIf { s -> s.isNotBlank() } }
-        request.sourceLabel?.let { tool.sourceLabel = it }
+        // Фреймворк - множественное поле, как и "Ограничения" ниже (см. AiTool.framework).
+        request.framework?.let { tool.framework = it.map { s -> s.trim() }.filter { s -> s.isNotBlank() }.toMutableSet() }
+        request.toolType?.let { tool.toolType = it.trim().takeIf { s -> s.isNotBlank() } }
+        request.constraints?.let { tool.constraints = it.map { s -> s.trim() }.filter { s -> s.isNotBlank() }.toMutableSet() }
+        // Ссылка обязательна для обычного пользователя (как и при создании), но необязательна
+        // для администратора - пустая строка от него сохраняется как null.
+        request.sourceLabel?.let {
+            val trimmed = it.trim()
+            if (!isAdmin && trimmed.isBlank()) {
+                throw BadRequestException("Введите ссылку на инструмент")
+            }
+            val newSourceLabel = trimmed.takeIf { s -> s.isNotBlank() }
+            if (newSourceLabel != null) {
+                aiToolRepository.findFirstBySourceLabelAndStatusInAndIdNot(newSourceLabel, ACTIVE_SOURCE_LABEL_STATUSES, tool.id!!)
+                    ?.let { existing -> throw DuplicateSourceLabelException(existing.id!!, existing.name) }
+            }
+            tool.sourceLabel = newSourceLabel
+        }
 
         if (isAdmin) {
             request.stage?.let { tool.stage = parseEnum<ToolStage>(it, "этап") }
@@ -221,15 +282,37 @@ class ToolService(
             request.efficiencyPct?.let { tool.efficiencyPct = it }
             // "Топ" больше нельзя выставить вручную - плашка присваивается автоматически (см. computeTopIds).
             request.segment?.let { tool.segment = it.trim().takeIf { s -> s.isNotBlank() } }
-        } else if (wasPublishedOrRejected) {
-            // Автор отредактировал уже опубликованный или отклонённый инструмент -
-            // отправляем его на повторную модерацию и сбрасываем прежнюю причину отклонения.
+        } else if (shouldResubmitOnEdit) {
+            // Автор отредактировал уже опубликованный, отклонённый или отозванный в черновик
+            // инструмент - отправляем его на повторную модерацию и сбрасываем прежнюю причину отклонения.
             tool.status = ToolStatus.PENDING
             tool.rejectionReason = null
             notificationService.notifyAdminsOfNewSubmission(tool)
         }
         tool.updatedAt = Instant.now()
         return aiToolRepository.save(tool).toResponse(principal, computeTopIds())
+    }
+
+    /**
+     * Отзыв собственной заявки с модерации (кнопка "Отозвать" в виджете "Мои инструменты на
+     * модерации" на главной) - вместо безвозвратного удаления переводит инструмент в статус
+     * DRAFT. Черновик виден только автору (вкладка "Черновики" в "Мои инструменты" -
+     * MyDownloadsModal), не публикуется и не участвует ни в одной выборке реестра, пока автор
+     * не отредактирует его и не отправит повторно (см. update/shouldResubmitOnEdit выше) -
+     * либо не удалит насовсем через обычный delete.
+     */
+    @Transactional
+    fun withdraw(id: UUID, principal: UserPrincipal): ToolResponse {
+        val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
+        if (tool.createdBy?.id != principal.id) {
+            throw ForbiddenException("Отозвать можно только собственную заявку")
+        }
+        if (tool.status != ToolStatus.PENDING) {
+            throw BadRequestException("Отозвать можно только заявку, ожидающую модерации")
+        }
+        tool.status = ToolStatus.DRAFT
+        tool.updatedAt = Instant.now()
+        return aiToolRepository.save(tool).toResponse(principal, emptySet())
     }
 
     @Transactional
@@ -389,10 +472,14 @@ class ToolService(
             else -> null
         }
 
-    private fun equalsSpec(field: String, value: String?): Specification<AiTool>? =
-        if (value.isNullOrBlank()) null else Specification { root, _, cb -> cb.equal(root.get<String>(field), value) }
+    /** "Тип инструмента" в фильтре - совпадение с любым из выбранных значений (см. AiTool.toolType). */
+    private fun toolTypeSpec(values: List<String>?): Specification<AiTool>? {
+        val cleaned = values?.filter { it.isNotBlank() }
+        if (cleaned.isNullOrEmpty()) return null
+        return Specification { root, _, _ -> root.get<String>("toolType").`in`(cleaned) }
+    }
 
-    /** "Содержит хотя бы одно из значений" - для поля role, которое является коллекцией. */
+    /** "Содержит хотя бы одно из значений" - для полей-коллекций (roles, framework, constraints). */
     private fun collectionContainsAnySpec(field: String, values: List<String>?): Specification<AiTool>? {
         val cleaned = values?.filter { it.isNotBlank() }
         if (cleaned.isNullOrEmpty()) return null
@@ -428,8 +515,9 @@ class ToolService(
             stage = this.stage.name,
             status = this.status.name,
             roles = this.roles.toList().sorted(),
-            framework = this.framework,
-            constraints = this.constraints,
+            framework = this.framework.toList().sorted(),
+            toolType = this.toolType,
+            constraints = this.constraints.toList().sorted(),
             sourceLabel = this.sourceLabel,
             ownerName = this.ownerName,
             downloads = this.downloads,

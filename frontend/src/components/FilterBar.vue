@@ -3,14 +3,19 @@ import IconBase from './IconBase.vue'
 import MultiSelectDropdown from './MultiSelectDropdown.vue'
 
 const props = defineProps({
-  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], constraints: [] }) },
+  filterOptions: { type: Object, default: () => ({ roles: [], frameworks: [], constraints: [], toolTypes: [] }) },
   resultCount: { type: Number, default: 0 }
 })
 
 const emit = defineEmits(['reset'])
 
 const role = defineModel('role', { default: () => [] })
-const framework = defineModel('framework', { default: '' })
+const framework = defineModel('framework', { default: () => [] })
+const constraints = defineModel('constraints', { default: () => [] })
+// У самого инструмента "Тип инструмента" - одно значение (см. AiTool.toolType), но в
+// фильтре можно выбрать сразу несколько - показать инструменты любого из выбранных типов,
+// как и с ролью/фреймворком/ограничениями ниже (см. ToolService.toolTypeSpec на бэкенде).
+const toolType = defineModel('toolType', { default: () => [] })
 const search = defineModel('search', { default: '' })
 </script>
 
@@ -23,10 +28,30 @@ const search = defineModel('search', { default: '' })
 
     <div class="filter-group">
       <label>Агентские фреймворки</label>
-      <select v-model="framework" class="input">
-        <option value="">Все</option>
-        <option v-for="opt in filterOptions.frameworks" :key="opt" :value="opt">{{ opt }}</option>
-      </select>
+      <!-- Тот же MultiSelectDropdown, что и "Роль"/"Ограничения" ниже - у инструмента может
+           быть сразу несколько фреймворков (см. AiTool.framework). -->
+      <MultiSelectDropdown v-model="framework" :options="filterOptions.frameworks" all-label="Все" />
+    </div>
+
+    <div class="filter-group">
+      <label>Ограничения</label>
+      <!-- Тот же MultiSelectDropdown, что и "Роль"/"Агентские фреймворки" выше, но без
+           свободного ввода - здесь это не создание нового значения, а фильтр по уже
+           существующим (см. ToolService.filterOptions - базовый набор теперь читается из
+           таблицы preset_constraint, см. 010-create-preset-tables.sql, плюс реально
+           сохранённые значения). Свой вариант вводится один раз - в форме добавления
+           инструмента (AddToolModal, тот же компонент с allow-custom) - и после сохранения
+           сам появится здесь в списке. -->
+      <MultiSelectDropdown
+        v-model="constraints"
+        :options="filterOptions.constraints"
+        all-label="Любые условия"
+      />
+    </div>
+
+    <div class="filter-group">
+      <label>Тип инструмента</label>
+      <MultiSelectDropdown v-model="toolType" :options="filterOptions.toolTypes" all-label="Любой" />
     </div>
 
     <div class="filter-group filter-search">

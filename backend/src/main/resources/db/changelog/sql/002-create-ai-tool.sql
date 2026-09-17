@@ -1,9 +1,10 @@
 --liquibase formatted sql
 
 --changeset heatmap:002-create-ai-tool
---comment: реестр AI-инструментов PDLC. Роль - множественная, вынесена в отдельную
---comment: таблицу tool_role (см. 003-create-tool-role-segment.sql; поле "Сегмент" и его
---comment: таблица tool_segment убраны полностью - заменены свободным полем "Ограничения").
+--comment: реестр AI-инструментов PDLC. Роль, Агентский фреймворк и Ограничения - множественные,
+--comment: вынесены в отдельные таблицы tool_role/tool_framework/tool_constraint (см.
+--comment: 003-create-tool-role-segment.sql; поле "Сегмент" и его таблица tool_segment убраны
+--comment: полностью - заменены полем "Ограничения").
 --comment: description - VARCHAR без указания длины (в H2 это практически неограниченный размер);
 --comment: CLOB здесь не подходит - Hibernate не даёт использовать lower() (нужен для поиска) на CLOB-поле.
 --comment: плашки "Топ" нет отдельной колонкой - она вычисляется на лету (см. ToolService.computeTopIds).
@@ -14,10 +15,14 @@ CREATE TABLE ai_tool
     description       VARCHAR      NOT NULL,
     short_description VARCHAR(300),
     stage             VARCHAR(16)  NOT NULL DEFAULT 'ACCESS',
+    -- DRAFT - автор отозвал заявку с модерации кнопкой "Отозвать" (см. ToolService.withdraw);
+    -- виден только самому автору (вкладка "Черновики" в "Мои инструменты" - MyDownloadsModal),
+    -- не публикуется и не участвует ни в одной выборке реестра, пока не отредактирован и
+    -- отправлен повторно (тогда статус меняется обратно на PENDING).
     status            VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
-    framework         VARCHAR(64),
-    tool_constraints  VARCHAR(500),
-    source_label      VARCHAR(128) NOT NULL,
+    -- Тип инструмента - Skill/MCP/Agent/Harness/Tool/Framework/Другое (см. AiTool.toolType).
+    tool_type         VARCHAR(32),
+    source_label      VARCHAR(128),
     owner_name     VARCHAR(255) NOT NULL,
     downloads      INTEGER      NOT NULL DEFAULT 0,
     dau            INTEGER,
@@ -35,7 +40,7 @@ CREATE TABLE ai_tool
     admin_segment  VARCHAR(128),
     CONSTRAINT fk_ai_tool_created_by FOREIGN KEY (created_by) REFERENCES app_user (id) ON DELETE SET NULL,
     CONSTRAINT ck_ai_tool_stage CHECK (stage IN ('ACCESS', 'USAGE', 'HABIT', 'STANDARD')),
-    CONSTRAINT ck_ai_tool_status CHECK (status IN ('PENDING', 'PUBLISHED', 'REJECTED', 'ARCHIVED')),
+    CONSTRAINT ck_ai_tool_status CHECK (status IN ('PENDING', 'PUBLISHED', 'REJECTED', 'ARCHIVED', 'DRAFT')),
     CONSTRAINT ck_ai_tool_efficiency CHECK (efficiency_pct BETWEEN 0 AND 100)
 );
 

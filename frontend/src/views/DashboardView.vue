@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { extractErrorMessage } from '../services/api'
 import { useAuthStore } from '../stores/auth'
+import { useConfirm } from '../composables/useConfirm'
 import AppHeader from '../components/AppHeader.vue'
 import StatsGrid from '../components/StatsGrid.vue'
 import FilterBar from '../components/FilterBar.vue'
@@ -15,17 +16,18 @@ import IconBase from '../components/IconBase.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
+const { confirm } = useConfirm()
 
 const stats = ref(null)
 const counts = ref({})
-const filterOptions = ref({ roles: [], frameworks: [], constraints: [] })
+const filterOptions = ref({ roles: [], frameworks: [], constraints: [], toolTypes: [] })
 const impactBlocks = ref([])
 const tools = ref([])
 const myTools = ref([])
 
 // Открываем реестр сразу на вкладке "Все инструменты", а не "Топ".
 const activeTab = ref('ALL')
-const filters = reactive({ role: [], framework: '', search: '', sort: 'EFFICIENCY' })
+const filters = reactive({ role: [], framework: [], constraints: [], toolType: [], search: '', sort: 'EFFICIENCY' })
 
 // Фильтр "только с заметками" - виден администратору только на вкладке "Все инструменты"
 // (см. ToolList/showNotesFilter), чисто клиентский - notesCount уже приходит вместе с
@@ -105,7 +107,9 @@ async function loadTools() {
         // Бэкенд принимает список ролей через запятую в одном параметре
         // (Spring сам разбивает такую строку в List<String>).
         role: filters.role.length ? filters.role.join(',') : undefined,
-        framework: filters.framework || undefined,
+        framework: filters.framework.length ? filters.framework.join(',') : undefined,
+        constraints: filters.constraints.length ? filters.constraints.join(',') : undefined,
+        toolType: filters.toolType.length ? filters.toolType.join(',') : undefined,
         search: filters.search || undefined,
         sort: filters.sort || undefined
       }
@@ -163,7 +167,9 @@ async function onToolUpdated() {
 
 function resetFilters() {
   filters.role = []
-  filters.framework = ''
+  filters.framework = []
+  filters.constraints = []
+  filters.toolType = []
   filters.search = ''
   filters.sort = 'EFFICIENCY'
 }
@@ -172,17 +178,22 @@ async function onToolCreated() {
   await Promise.all([loadMine(), loadTopData()])
 }
 
-// Общий обработчик удаления: свою заявку отзывает автор, любой инструмент - администратор.
-// Возвращает true при успешном удалении, чтобы вызывающий код мог, например, закрыть модалку.
-async function onDeleteTool(tool) {
-  if (!confirm(`Удалить инструмент «${tool.name}»?`)) return false
+// "Отозвать" в виджете "Мои инструменты на модерации" - не удаляет инструмент насовсем, а
+// переводит его в статус DRAFT (см. ToolService.withdraw).
+// После этого заявка пропадает из виджета (он показывает только PENDING - см. myPendingTools)
+// и появляется во вкладке "Черновики" в "Мои инструменты" (MyDownloadsModal), откуда её можно
+// удалить или отредактировать и отправить повторно.
+async function onWithdrawTool(tool) {
+  const ok = await confirm(
+    `Отозвать «${tool.name}» с модерации? Заявка попадёт в черновики - её можно будет удалить или отправить повторно после редактирования.`,
+    { title: 'Отозвать заявку', confirmLabel: 'Отозвать', danger: false, icon: 'clock' }
+  )
+  if (!ok) return
   try {
-    await api.delete(`/tools/${tool.id}`)
+    await api.post(`/tools/${tool.id}/withdraw`)
     await Promise.all([loadMine(), loadTools(), loadTopData()])
-    return true
   } catch (e) {
-    errorMessage.value = extractErrorMessage(e, 'Не удалось удалить инструмент')
-    return false
+    errorMessage.value = extractErrorMessage(e, 'Не удалось отозвать заявку')
   }
 }
 
@@ -224,7 +235,7 @@ async function onRated() {
 
 let debounceHandle = null
 watch(
-  () => [activeTab.value, filters.role, filters.framework, filters.search, filters.sort],
+  () => [activeTab.value, filters.role, filters.framework, filters.constraints, filters.toolType, filters.search, filters.sort],
   () => {
     clearTimeout(debounceHandle)
     debounceHandle = setTimeout(loadTools, 200)
@@ -266,7 +277,7 @@ onMounted(() => {
             </div>
             <div class="my-request-actions">
               <button class="btn btn-ghost btn-sm" type="button" @click="openEditModal(t)">Редактировать</button>
-              <button class="btn btn-ghost btn-sm" type="button" @click="onDeleteTool(t)">Отозвать</button>
+              <button class="btn btn-ghost btn-sm" type="button" @click="onWithdrawTool(t)">Отозвать</button>
             </div>
           </div>
         </div>
@@ -275,6 +286,8 @@ onMounted(() => {
       <FilterBar
         v-model:role="filters.role"
         v-model:framework="filters.framework"
+        v-model:constraints="filters.constraints"
+        v-model:tool-type="filters.toolType"
         v-model:search="filters.search"
         :filter-options="filterOptions"
         :result-count="tools.length"

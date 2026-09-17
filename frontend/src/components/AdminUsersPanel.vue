@@ -2,9 +2,11 @@
 import { onMounted, ref, watch } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
 import { useAuthStore } from '../stores/auth'
+import { useConfirm } from '../composables/useConfirm'
 import IconBase from './IconBase.vue'
 
 const auth = useAuthStore()
+const { confirm } = useConfirm()
 const users = ref([])
 const loading = ref(true)
 const error = ref('')
@@ -46,7 +48,11 @@ async function toggleRole(user) {
 }
 
 async function deleteUser(user) {
-  if (!confirm(`Удалить пользователя «${user.fullName}» (@${user.username})? Это действие необратимо.`)) return
+  const ok = await confirm(
+    `Удалить пользователя «${user.fullName}» (@${user.username})? Это действие необратимо.`,
+    { title: 'Удалить пользователя', confirmLabel: 'Удалить' }
+  )
+  if (!ok) return
   busyId.value = user.id
   try {
     await api.delete(`/admin/users/${user.id}`)

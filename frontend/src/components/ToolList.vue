@@ -1,6 +1,7 @@
 <script setup>
 import ToolCard from './ToolCard.vue'
 import IconBase from './IconBase.vue'
+import SelectDropdown from './SelectDropdown.vue'
 
 defineProps({
   title: { type: String, required: true },
@@ -42,9 +43,7 @@ const sortOptions = [
         <div class="sort-control">
           <IconBase name="sort" :size="11" />
           <span class="sort-label">Сортировка:</span>
-          <select v-model="sort" class="sort-select">
-            <option v-for="opt in sortOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
+          <SelectDropdown v-model="sort" :options="sortOptions" compact />
         </div>
       </div>
     </div>
@@ -107,32 +106,6 @@ const sortOptions = [
 .sort-label {
   font-size: 13px;
   white-space: nowrap;
-}
-
-.sort-select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  font-size: 13px;
-  font-family: inherit;
-  color: var(--text-secondary);
-  background-color: var(--surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23868aa0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 7px center;
-  background-size: 12px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 4px 26px 4px 8px;
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.12s ease;
-}
-.sort-select:hover {
-  border-color: var(--border-strong);
-}
-.sort-select:focus {
-  border-color: var(--accent);
 }
 
 .cards-grid {

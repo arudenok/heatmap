@@ -8,10 +8,34 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
-data class ErrorResponse(val status: Int, val error: String, val message: String, val fieldErrors: Map<String, String> = emptyMap())
+// conflictToolId/conflictToolName заполнены только для DuplicateSourceLabelException (см. ниже) -
+// фронтенд (AddToolModal) использует их, чтобы показать имя существующего инструмента кликабельной
+// ссылкой на его карточку, а не просто текст ошибки.
+data class ErrorResponse(
+    val status: Int,
+    val error: String,
+    val message: String,
+    val fieldErrors: Map<String, String> = emptyMap(),
+    val conflictToolId: String? = null,
+    val conflictToolName: String? = null
+)
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
+
+    // Более специфичный обработчик, чем handleApiException ниже - Spring выбирает его для
+    // DuplicateSourceLabelException независимо от порядка объявления методов.
+    @ExceptionHandler(DuplicateSourceLabelException::class)
+    fun handleDuplicateSourceLabel(ex: DuplicateSourceLabelException): ResponseEntity<ErrorResponse> =
+        ResponseEntity.status(ex.status).body(
+            ErrorResponse(
+                ex.status.value(),
+                ex.status.reasonPhrase,
+                ex.message ?: "Ссылка уже используется",
+                conflictToolId = ex.toolId.toString(),
+                conflictToolName = ex.toolName
+            )
+        )
 
     @ExceptionHandler(ApiException::class)
     fun handleApiException(ex: ApiException): ResponseEntity<ErrorResponse> =

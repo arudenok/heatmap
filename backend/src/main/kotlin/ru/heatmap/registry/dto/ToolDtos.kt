@@ -19,6 +19,14 @@ private const val URL_PATTERN =
 private const val URL_MESSAGE =
     "Ссылка должна вести на корпоративный сервис (sc-ci, sbrf-bitbucket, stash, confluence, jira, mapp, sbertrack, onework)"
 
+// Базовый набор категорий "Тип инструмента" (см. AiTool.toolType) - всегда виден в форме/фильтре
+// (см. ToolService.filterOptions), но больше не единственно допустимый: администратор может
+// завести свой вариант (см. SelectDropdown.allowCustom в AddToolModal), как и с ролями/
+// фреймворком/ограничениями, поэтому строгой валидации по regexp для этого поля больше нет -
+// только ограничение длины (см. TOOL_TYPE_MAX_LENGTH ниже).
+val TOOL_TYPE_OPTIONS = listOf("Skill", "MCP", "Agent", "Harness", "Tool", "Framework", "Другое")
+private const val TOOL_TYPE_MAX_LENGTH = 60
+
 data class ToolResponse(
     val id: UUID,
     val name: String,
@@ -27,9 +35,13 @@ data class ToolResponse(
     val stage: String,
     val status: String,
     val roles: List<String>,
-    val framework: String?,
-    val constraints: String?,
-    val sourceLabel: String,
+    // Множественное, как и roles выше (см. AiTool.framework) - список может быть пустым.
+    val framework: List<String>,
+    // Категория из фиксированного набора (см. TOOL_TYPE_OPTIONS) - необязательна.
+    val toolType: String?,
+    // Множественное, как и roles выше (см. AiTool.constraints) - список может быть пустым.
+    val constraints: List<String>,
+    val sourceLabel: String?,
     val ownerName: String,
     val downloads: Int,
     val dau: Int?,
@@ -86,16 +98,23 @@ data class CreateToolRequest(
     @field:NotEmpty(message = "Выберите хотя бы одну роль")
     val roles: List<String>,
 
-    // Необязательное поле (раньше было обязательным) - не у каждого инструмента есть
-    // выраженный агентский фреймворк.
-    val framework: String? = null,
+    // Множественное, как и roles выше - в отличие от ролей, не обязательно ни одного значения
+    // (раньше было одно обязательное значение).
+    val framework: List<String> = emptyList(),
 
-    // Свободный текст с подсказками (см. FilterOptionsResponse.constraints) - необязателен.
-    val constraints: String? = null,
+    // Тип инструмента - необязательная категория, обычно из базового набора (см. TOOL_TYPE_OPTIONS),
+    // но администратор может ввести свой вариант (см. AddToolModal/SelectDropdown.allowCustom).
+    @field:Size(max = TOOL_TYPE_MAX_LENGTH, message = "Не более $TOOL_TYPE_MAX_LENGTH символов")
+    val toolType: String? = null,
 
-    @field:NotBlank(message = "Введите ссылку на инструмент")
+    // Множественное, как и roles выше (см. FilterOptionsResponse.constraints для подсказок на
+    // фронте) - в отличие от ролей, не обязательно ни одного значения.
+    val constraints: List<String> = emptyList(),
+
+    // Обязательна для обычного пользователя, но необязательна для администратора -
+    // это правило зависит от роли, поэтому проверяется в ToolService.create, а не аннотацией.
     @field:Pattern(regexp = URL_PATTERN, message = URL_MESSAGE)
-    val sourceLabel: String,
+    val sourceLabel: String? = null,
 
     // Доступно только администратору при создании (см. ToolService.create) - обычный
     // пользователь всегда попадает на модерацию с этапом Access, что бы сюда ни передал.
@@ -113,8 +132,12 @@ data class UpdateToolRequest(
     val shortDescription: String? = null,
 
     val roles: List<String>? = null,
-    val framework: String? = null,
-    val constraints: String? = null,
+    val framework: List<String>? = null,
+
+    @field:Size(max = TOOL_TYPE_MAX_LENGTH, message = "Не более $TOOL_TYPE_MAX_LENGTH символов")
+    val toolType: String? = null,
+
+    val constraints: List<String>? = null,
 
     @field:Pattern(regexp = URL_PATTERN, message = URL_MESSAGE)
     val sourceLabel: String? = null,
@@ -151,9 +174,15 @@ data class ToolCountsResponse(
 data class FilterOptionsResponse(
     val roles: List<String>,
     val frameworks: List<String>,
-    // Подсказки для автодополнения поля "Ограничения" (свободный текст, не мультиселект,
-    // поэтому это не фильтр, а просто список ранее введённых значений).
-    val constraints: List<String>
+    // Варианты для поля "Ограничения" - и в форме добавления инструмента (AddToolModal), и в
+    // фильтре на главной (FilterBar.vue), это один и тот же MultiSelectDropdown - базовый
+    // набор (см. ToolService.PRESET_CONSTRAINTS) плюс реально сохранённые значения.
+    val constraints: List<String>,
+    // "Тип инструмента" - базовый набор (см. TOOL_TYPE_OPTIONS) плюс реально сохранённые
+    // значения, включая "свой вариант" администратора (см. ToolService.filterOptions).
+    // В форме добавления - один выбор (SelectDropdown), в фильтре на главной - несколько
+    // (MultiSelectDropdown), но список вариантов один и тот же.
+    val toolTypes: List<String>
 )
 
 data class StatsResponse(

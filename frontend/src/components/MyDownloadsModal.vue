@@ -1,19 +1,27 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import api, { extractErrorMessage } from '../services/api'
+import { useConfirm } from '../composables/useConfirm'
 import IconBase from './IconBase.vue'
 import ToolDetailModal from './ToolDetailModal.vue'
 import AddToolModal from './AddToolModal.vue'
 
 const open = defineModel({ default: false })
+const { confirm } = useConfirm()
 
 // Вкладка "Скачанные" - то, что пользователь скачивал (можно оценить).
-// Вкладка "Загруженные" - собственные заявки/инструменты пользователя, любого статуса.
+// Вкладка "Загруженные" - собственные заявки/инструменты пользователя (кроме черновиков - см. ниже).
+// Вкладка "Черновики" - инструменты, отозванные с модерации кнопкой "Отозвать" на главной
+// (см. DashboardView.onWithdrawTool/ToolService.withdraw) - статус DRAFT. Отдельная вкладка,
+// чтобы не путать их с обычными заявками на модерации/отклонёнными в "Загруженных".
+// Оба списка приходят одним и тем же запросом /tools/mine - см. uploadedActiveTools/draftTools.
 const activeTab = ref('downloaded')
 const loadedTabs = ref({ downloaded: false, uploaded: false })
 
 const downloadedTools = ref([])
 const uploadedTools = ref([])
+const uploadedActiveTools = computed(() => uploadedTools.value.filter((t) => t.status !== 'DRAFT'))
+const draftTools = computed(() => uploadedTools.value.filter((t) => t.status === 'DRAFT'))
 const loading = ref(true)
 const error = ref('')
 const busyId = ref(null)
@@ -23,7 +31,7 @@ const detailOpen = ref(false)
 const detailTool = ref(null)
 
 // Нужны для формы редактирования собственной заявки (AddToolModal).
-const filterOptions = ref({ roles: [], frameworks: [], constraints: [] })
+const filterOptions = ref({ roles: [], frameworks: [], constraints: [], toolTypes: [] })
 const editModalOpen = ref(false)
 const editingTool = ref(null)
 
@@ -38,7 +46,8 @@ const statusMeta = {
   PENDING: { label: 'На модерации', class: 'badge-warn' },
   PUBLISHED: { label: 'Опубликован', class: 'badge-info' },
   REJECTED: { label: 'Отклонено', class: 'badge-danger' },
-  ARCHIVED: { label: 'В архиве', class: 'badge-muted' }
+  ARCHIVED: { label: 'В архиве', class: 'badge-muted' },
+  DRAFT: { label: 'Черновик', class: 'badge-muted' }
 }
 
 async function loadDownloaded() {
@@ -83,7 +92,10 @@ async function loadTab(tab) {
 function switchTab(tab) {
   activeTab.value = tab
   error.value = ''
-  if (!loadedTabs.value[tab]) loadTab(tab)
+  // "Черновики" - те же данные, что и "Загруженные" (один запрос /tools/mine, см.
+  // uploadedActiveTools/draftTools выше), поэтому переиспользуем флаг загрузки 'uploaded'.
+  const dataTab = tab === 'draft' ? 'uploaded' : tab
+  if (!loadedTabs.value[dataTab]) loadTab(dataTab)
 }
 
 async function rate(tool, value) {
@@ -131,7 +143,8 @@ async function onToolUpdated() {
 }
 
 async function deleteTool(tool, { fromDetail = false } = {}) {
-  if (!confirm(`Удалить инструмент «${tool.name}»?`)) return
+  const ok = await confirm(`Удалить инструмент «${tool.name}»?`, { title: 'Удалить инструмент', confirmLabel: 'Удалить' })
+  if (!ok) return
   try {
     await api.delete(`/tools/${tool.id}`)
     downloadedTools.value = downloadedTools.value.filter((t) => t.id !== tool.id)
@@ -184,10 +197,19 @@ watch(open, (value) => {
         >
           Загруженные
         </button>
+        <button
+          type="button"
+          class="tab-btn"
+          :class="{ active: activeTab === 'draft' }"
+          @click="switchTab('draft')"
+        >
+          Черновики
+        </button>
       </div>
 
       <p v-if="activeTab === 'downloaded'" class="modal-hint">Инструменты, которые вы скачивали. Здесь можно поставить или изменить оценку.</p>
-      <p v-else class="modal-hint">Инструменты, добавленные вами - включая заявки на модерации и отклонённые.</p>
+      <p v-else-if="activeTab === 'uploaded'" class="modal-hint">Инструменты, добавленные вами - включая заявки на модерации и отклонённые.</p>
+      <p v-else class="modal-hint">Заявки, отозванные с модерации. Здесь можно удалить инструмент насовсем либо отредактировать и отправить на модерацию повторно.</p>
 
       <div v-if="loading" class="skeleton" style="height: 48px;"></div>
 
@@ -224,11 +246,11 @@ watch(open, (value) => {
         </div>
       </template>
 
-      <template v-else>
-        <p v-if="!uploadedTools.length" class="empty-text">Вы пока не добавляли инструменты.</p>
+      <template v-else-if="activeTab === 'uploaded'">
+        <p v-if="!uploadedActiveTools.length" class="empty-text">Вы пока не добавляли инструменты.</p>
 
         <div v-else class="my-downloads-list">
-          <div v-for="tool in uploadedTools" :key="tool.id" class="my-downloads-row">
+          <div v-for="tool in uploadedActiveTools" :key="tool.id" class="my-downloads-row">
             <button type="button" class="my-downloads-name" @click="openDetail(tool)">
               {{ tool.name }}
               <span class="badge" :class="statusMeta[tool.status]?.class">{{ statusMeta[tool.status]?.label }}</span>
@@ -248,6 +270,31 @@ watch(open, (value) => {
             <p v-if="tool.status === 'REJECTED' && tool.rejectionReason" class="my-uploads-reason">
               Причина отклонения: {{ tool.rejectionReason }}
             </p>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <p v-if="!draftTools.length" class="empty-text">Черновиков пока нет.</p>
+
+        <div v-else class="my-downloads-list">
+          <div v-for="tool in draftTools" :key="tool.id" class="my-downloads-row">
+            <button type="button" class="my-downloads-name" @click="openDetail(tool)">
+              {{ tool.name }}
+              <span class="badge" :class="statusMeta[tool.status]?.class">{{ statusMeta[tool.status]?.label }}</span>
+            </button>
+            <div class="my-uploads-actions">
+              <button
+                class="btn btn-ghost btn-sm"
+                type="button"
+                @click="openEditModal(tool)"
+              >
+                <IconBase name="edit" :size="13" /> Редактировать и отправить
+              </button>
+              <button class="btn btn-ghost btn-sm" type="button" @click="deleteTool(tool)">
+                <IconBase name="trash" :size="13" /> Удалить
+              </button>
+            </div>
           </div>
         </div>
       </template>

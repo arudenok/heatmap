@@ -160,7 +160,7 @@ defineExpose({ refresh: load })
           </div>
           <div class="tools-tags">
             <span v-for="r in tool.roles" :key="r" class="tag">{{ r }}</span>
-            <span class="tag">{{ tool.framework }}</span>
+            <span v-for="f in tool.framework" :key="f" class="tag">{{ f }}</span>
             <span class="tag">👤 {{ tool.ownerName }}</span>
           </div>
         </div>
