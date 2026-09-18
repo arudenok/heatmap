@@ -49,3 +49,4 @@ management:
 logging:
   level:
     ru.heatmap: INFO
+    org.hibernate.validator.internal.metadata.aggregated.CascadingMetaDataBuilder: ERROR
