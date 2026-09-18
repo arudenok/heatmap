@@ -5,6 +5,7 @@ import ru.heatmap.registry.domain.ToolStage
 import ru.heatmap.registry.domain.ToolStatus
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import java.time.Instant
 import java.util.UUID
@@ -37,6 +38,31 @@ interface AiToolRepository : JpaRepository<AiTool, UUID>, JpaSpecificationExecut
 
     @Query("select distinct t.toolType from AiTool t where t.toolType is not null")
     fun findDistinctToolTypes(): List<String>
+
+    // Атомарные инкременты счётчиков (views/downloads/ratingSum/ratingsCount) - без них
+    // read-modify-write через загруженную сущность (tool.views += 1; save(tool)) теряет
+    // обновления под конкурентной нагрузкой: эмпирически проверено на живом сервере - 40
+    // параллельных POST /api/tools/{id}/view дали итоговый счётчик 8 вместо 40. UPDATE ...
+    // SET x = x + :n выполняется атомарно на стороне БД, поэтому обновления не теряются
+    // независимо от того, сколько запросов пришло одновременно.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update AiTool t set t.views = t.views + 1 where t.id = :id")
+    fun incrementViews(id: UUID): Int
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update AiTool t set t.downloads = t.downloads + 1 where t.id = :id")
+    fun incrementDownloads(id: UUID): Int
+
+    // Новая оценка: и сумма, и количество оценок растут атомарно вместе.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update AiTool t set t.ratingSum = t.ratingSum + :value, t.ratingsCount = t.ratingsCount + 1 where t.id = :id")
+    fun addNewRating(id: UUID, value: Long): Int
+
+    // Изменение уже существующей оценки пользователя: меняется только сумма (на разницу),
+    // количество оценок остаётся прежним.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update AiTool t set t.ratingSum = t.ratingSum + :delta where t.id = :id")
+    fun adjustRatingSum(id: UUID, delta: Long): Int
 
     // Проекция для AiToolResponseAssembler.computeTopIds (см. AiToolScoreProjection) - только
     // числовые поля, нужные для расчёта скора "Топ", без eager-коллекций roles/framework/constraints.

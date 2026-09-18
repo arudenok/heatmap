@@ -319,21 +319,32 @@ class ToolService(
             throw ForbiddenException("Удалить можно только собственный инструмент")
         }
         // Связь AiTool -> ToolRating/ToolDownload/ToolNote однонаправленная (нет @OneToMany),
-        // поэтому JPA не каскадирует удаление - нужно явно почистить зависимые записи, иначе
-        // упадём на FK constraint violation (см. аналогичный паттерн в AdminUserService.delete).
-        toolRatingRepository.deleteAllByToolId(id)
-        toolDownloadRepository.deleteAllByToolId(id)
-        toolNoteRepository.deleteAllByToolId(id)
+        // поэтому сам JPA/Hibernate не каскадирует удаление на уровне ORM. Раньше это чистилось
+        // вручную тремя deleteAllByToolId ПЕРЕД удалением ai_tool - но между этой ручной очисткой
+        // и самим DELETE FROM ai_tool оставалось окно, в которое параллельный запрос пользователя
+        // (rate/download) успевал вставить новую строку в tool_rating/tool_download, и финальное
+        // удаление падало с нарушением внешнего ключа (проверено эмпирически: 5 параллельных
+        // rate/download от разных пользователей + одновременный DELETE администратора -> 500
+        // Referential integrity constraint violation). Теперь все три FK (tool_rating,
+        // tool_download, tool_note - см. 011-cascade-delete-tool-rating-download.sql и
+        // 009-create-tool-note.sql) настроены с ON DELETE CASCADE на уровне БД: одна атомарная
+        // операция удаления вместо ручной последовательности из четырёх, гонка невозможна в принципе.
         aiToolRepository.delete(tool)
     }
 
-    /** Счётчик просмотров увеличивается по клику "Подробнее" на карточке инструмента. */
+    /**
+     * Счётчик просмотров увеличивается по клику "Подробнее" на карточке инструмента.
+     * Инкремент атомарный на стороне БД (см. AiToolRepository.incrementViews) - обычный
+     * read-modify-write через загруженную сущность под конкурентной нагрузкой теряет
+     * обновления (проверено эмпирически: 40 параллельных вызовов -> счётчик 8 вместо 40).
+     */
     @Transactional
     fun incrementView(id: UUID, principal: UserPrincipal?): ToolResponse {
+        if (!aiToolRepository.existsById(id)) throw NotFoundException("Инструмент не найден")
+        aiToolRepository.incrementViews(id)
         val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
-        tool.views += 1
         return toolResponseAssembler.toResponse(
-            aiToolRepository.save(tool),
+            tool,
             principal,
             toolResponseAssembler.computeTopIds()
         )
@@ -347,17 +358,19 @@ class ToolService(
      */
     @Transactional
     fun incrementDownload(id: UUID, principal: UserPrincipal?): ToolResponse {
-        val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
+        if (!aiToolRepository.existsById(id)) throw NotFoundException("Инструмент не найден")
         if (principal == null) {
-            tool.downloads += 1
+            aiToolRepository.incrementDownloads(id)
         } else if (!toolDownloadRepository.existsByToolIdAndUserId(id, principal.id)) {
             val owner =
                 appUserRepository.findByIdOrNull(principal.id) ?: throw NotFoundException("Пользователь не найден")
+            val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
             toolDownloadRepository.save(ToolDownload(tool = tool, user = owner))
-            tool.downloads += 1
+            aiToolRepository.incrementDownloads(id)
         }
+        val fresh = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         return toolResponseAssembler.toResponse(
-            aiToolRepository.save(tool),
+            fresh,
             principal,
             toolResponseAssembler.computeTopIds()
         )
@@ -369,21 +382,24 @@ class ToolService(
      */
     @Transactional
     fun rate(id: UUID, value: Int, principal: UserPrincipal): ToolResponse {
-        val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
+        if (!aiToolRepository.existsById(id)) throw NotFoundException("Инструмент не найден")
         val existing = toolRatingRepository.findByToolIdAndUserId(id, principal.id)
         if (existing != null) {
-            tool.ratingSum += (value - existing.value)
+            val delta = (value - existing.value).toLong()
             existing.value = value
             existing.updatedAt = Instant.now()
+            toolRatingRepository.save(existing)
+            if (delta != 0L) aiToolRepository.adjustRatingSum(id, delta)
         } else {
             val owner =
                 appUserRepository.findByIdOrNull(principal.id) ?: throw NotFoundException("Пользователь не найден")
+            val tool = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
             toolRatingRepository.save(ToolRating(tool = tool, user = owner, value = value))
-            tool.ratingSum += value
-            tool.ratingsCount += 1
+            aiToolRepository.addNewRating(id, value.toLong())
         }
+        val fresh = aiToolRepository.findByIdOrNull(id) ?: throw NotFoundException("Инструмент не найден")
         return toolResponseAssembler.toResponse(
-            aiToolRepository.save(tool),
+            fresh,
             principal,
             toolResponseAssembler.computeTopIds()
         )

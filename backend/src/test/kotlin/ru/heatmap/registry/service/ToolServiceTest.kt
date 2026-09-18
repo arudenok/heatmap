@@ -8,11 +8,11 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
-import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.Sort
 import org.springframework.data.jpa.domain.Specification
@@ -513,18 +513,22 @@ class ToolServiceTest {
         }
 
         @Test
-        fun `owner delete cleans up dependent rows before deleting the tool, in order`() {
+        fun `owner delete removes only the tool - dependent rows are cleaned up by DB-level ON DELETE CASCADE`() {
+            // Раньше ToolService.delete() вручную чистил tool_rating/tool_download/tool_note
+            // перед удалением ai_tool - но окно между ручной очисткой и самим удалением давало
+            // гонку с параллельным rate/download от пользователя (проверено эмпирически: 500
+            // Referential integrity constraint violation). Теперь все три FK настроены с
+            // ON DELETE CASCADE (см. 011-cascade-delete-tool-rating-download.sql), поэтому
+            // сервис только удаляет саму строку ai_tool - и никогда не должен трогать
+            // toolRatingRepository/toolDownloadRepository/toolNoteRepository напрямую.
             val owner = user()
             val t = tool(createdBy = owner)
             whenever(aiToolRepository.findById(t.id!!)).thenReturn(Optional.of(t))
 
             service.delete(t.id!!, UserPrincipal(owner))
 
-            val order = inOrder(toolRatingRepository, toolDownloadRepository, toolNoteRepository, aiToolRepository)
-            order.verify(toolRatingRepository).deleteAllByToolId(t.id!!)
-            order.verify(toolDownloadRepository).deleteAllByToolId(t.id!!)
-            order.verify(toolNoteRepository).deleteAllByToolId(t.id!!)
-            order.verify(aiToolRepository).delete(t)
+            verify(aiToolRepository).delete(t)
+            verifyNoInteractions(toolRatingRepository, toolDownloadRepository, toolNoteRepository)
         }
 
         @Test
@@ -542,16 +546,22 @@ class ToolServiceTest {
     @Nested
     inner class IncrementView {
         @Test
-        fun `increments views by one`() {
+        fun `increments views by one atomically`() {
             val t = tool()
             t.views = 5
+            whenever(aiToolRepository.existsById(t.id!!)).thenReturn(true)
+            // Атомарный UPDATE ... SET views = views + 1 (см. AiToolRepository.incrementViews) -
+            // в проде выполняется на стороне БД одним запросом; здесь симулируем его эффект,
+            // чтобы не потерять покрытие теста на конкурентно-безопасную реализацию.
+            whenever(aiToolRepository.incrementViews(t.id!!)).thenAnswer { t.views += 1; 1 }
             whenever(aiToolRepository.findById(t.id!!)).thenReturn(Optional.of(t))
-            whenever(aiToolRepository.save(any())).thenAnswer { it.arguments[0] }
             stubAssembler()
 
             service.incrementView(t.id!!, null)
 
             assertThat(t.views).isEqualTo(6)
+            verify(aiToolRepository).incrementViews(t.id!!)
+            verify(aiToolRepository, never()).save(any())
         }
     }
 
@@ -561,8 +571,9 @@ class ToolServiceTest {
         fun `anonymous always increments without tracking`() {
             val t = tool()
             t.downloads = 3
+            whenever(aiToolRepository.existsById(t.id!!)).thenReturn(true)
+            whenever(aiToolRepository.incrementDownloads(t.id!!)).thenAnswer { t.downloads += 1; 1 }
             whenever(aiToolRepository.findById(t.id!!)).thenReturn(Optional.of(t))
-            whenever(aiToolRepository.save(any())).thenAnswer { it.arguments[0] }
             stubAssembler()
 
             service.incrementDownload(t.id!!, null)
@@ -575,8 +586,9 @@ class ToolServiceTest {
         fun `first download by a user is tracked and counted`() {
             val t = tool()
             t.downloads = 0
+            whenever(aiToolRepository.existsById(t.id!!)).thenReturn(true)
             whenever(aiToolRepository.findById(t.id!!)).thenReturn(Optional.of(t))
-            whenever(aiToolRepository.save(any())).thenAnswer { it.arguments[0] }
+            whenever(aiToolRepository.incrementDownloads(t.id!!)).thenAnswer { t.downloads += 1; 1 }
             val owner = user()
             whenever(toolDownloadRepository.existsByToolIdAndUserId(t.id!!, owner.id!!)).thenReturn(false)
             whenever(appUserRepository.findById(owner.id!!)).thenReturn(Optional.of(owner))
@@ -592,8 +604,8 @@ class ToolServiceTest {
         fun `repeat download by the same user is not counted again`() {
             val t = tool()
             t.downloads = 1
+            whenever(aiToolRepository.existsById(t.id!!)).thenReturn(true)
             whenever(aiToolRepository.findById(t.id!!)).thenReturn(Optional.of(t))
-            whenever(aiToolRepository.save(any())).thenAnswer { it.arguments[0] }
             val owner = user()
             whenever(toolDownloadRepository.existsByToolIdAndUserId(t.id!!, owner.id!!)).thenReturn(true)
             stubAssembler()
@@ -602,18 +614,24 @@ class ToolServiceTest {
 
             assertThat(t.downloads).isEqualTo(1)
             verify(toolDownloadRepository, never()).save(any())
+            verify(aiToolRepository, never()).incrementDownloads(any())
         }
     }
 
     @Nested
     inner class Rate {
         @Test
-        fun `new rating is saved and sum plus count updated`() {
+        fun `new rating is saved and sum plus count updated atomically`() {
             val t = tool()
             t.ratingSum = 0
             t.ratingsCount = 0
+            whenever(aiToolRepository.existsById(t.id!!)).thenReturn(true)
             whenever(aiToolRepository.findById(t.id!!)).thenReturn(Optional.of(t))
-            whenever(aiToolRepository.save(any())).thenAnswer { it.arguments[0] }
+            whenever(aiToolRepository.addNewRating(eq(t.id!!), eq(4L))).thenAnswer {
+                t.ratingSum += 4
+                t.ratingsCount += 1
+                1
+            }
             val rater = user()
             whenever(toolRatingRepository.findByToolIdAndUserId(t.id!!, rater.id!!)).thenReturn(null)
             whenever(appUserRepository.findById(rater.id!!)).thenReturn(Optional.of(rater))
@@ -631,8 +649,9 @@ class ToolServiceTest {
             val t = tool()
             t.ratingSum = 3
             t.ratingsCount = 1
+            whenever(aiToolRepository.existsById(t.id!!)).thenReturn(true)
             whenever(aiToolRepository.findById(t.id!!)).thenReturn(Optional.of(t))
-            whenever(aiToolRepository.save(any())).thenAnswer { it.arguments[0] }
+            whenever(aiToolRepository.adjustRatingSum(eq(t.id!!), eq(2L))).thenAnswer { t.ratingSum += 2; 1 }
             val rater = user()
             val existing = ToolRating(tool = t, user = rater, value = 3)
             whenever(toolRatingRepository.findByToolIdAndUserId(t.id!!, rater.id!!)).thenReturn(existing)
@@ -643,7 +662,7 @@ class ToolServiceTest {
             assertThat(t.ratingSum).isEqualTo(5)
             assertThat(t.ratingsCount).isEqualTo(1)
             assertThat(existing.value).isEqualTo(5)
-            verify(toolRatingRepository, never()).save(any())
+            verify(toolRatingRepository).save(existing)
         }
     }
 

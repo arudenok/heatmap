@@ -3,6 +3,7 @@ package ru.heatmap.registry.web
 import ru.heatmap.registry.dto.ErrorResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.bind.MethodArgumentNotValidException
@@ -44,6 +45,22 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(400, "Bad Request", "Проверьте правильность заполнения полей", fieldErrors))
     }
+
+    // Ловит гонки на уровне БД, которые не успели превратиться в понятную бизнес-ошибку раньше -
+    // например, узкое окно между удалением инструмента администратором и вставкой новой оценки/
+    // скачивания от пользователя (см. ToolService.delete/rate/incrementDownload). Раньше такое
+    // падало в handleGeneric ниже и отдавало клиенту сырой текст SQL-исключения с именами таблиц
+    // и constraint'ов - теперь отдаём нейтральный, безопасный для показа пользователю текст.
+    @ExceptionHandler(DataIntegrityViolationException::class)
+    fun handleDataIntegrityViolation(ex: DataIntegrityViolationException): ResponseEntity<ErrorResponse> =
+        ResponseEntity.status(HttpStatus.CONFLICT).body(
+            ErrorResponse(
+                409,
+                "Conflict",
+                "Не удалось выполнить операцию - похоже, связанные данные были изменены или удалены. Обновите страницу и попробуйте снова.",
+                emptyMap()
+            )
+        )
 
     @ExceptionHandler(BadCredentialsException::class)
     fun handleBadCredentials(ex: BadCredentialsException): ResponseEntity<ErrorResponse> =
