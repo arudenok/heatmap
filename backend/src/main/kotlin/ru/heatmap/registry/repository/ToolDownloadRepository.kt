@@ -11,4 +11,8 @@ interface ToolDownloadRepository : JpaRepository<ToolDownload, UUID> {
     // Нужно при удалении пользователя администратором - иначе FK user_id в tool_download
     // помешает удалить саму запись app_user.
     fun deleteAllByUserId(userId: UUID)
+
+    // Нужно при удалении инструмента - иначе FK tool_id в tool_download помешает удалить
+    // саму запись ai_tool (см. ToolService.delete).
+    fun deleteAllByToolId(toolId: UUID)
 }

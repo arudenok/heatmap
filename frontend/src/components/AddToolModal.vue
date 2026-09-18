@@ -112,6 +112,18 @@ async function openDuplicateTool() {
   }
 }
 
+// Незаполненные/некорректные обязательные поля подсвечиваются красным при попытке отправки.
+// Краткое описание и ограничения необязательны, поэтому в этот список не входят.
+// Объявлено до watch(..., { immediate: true }) ниже - тот при монтировании с открытой
+// модалкой (open=true) сразу вызывает resetForm(), а она обращается к invalidFields;
+// будь объявление после watch, это упало бы с ReferenceError (temporal dead zone у const).
+const invalidFields = reactive({
+  name: false,
+  description: false,
+  roles: false,
+  sourceLabel: false
+})
+
 // При открытии модалки в режиме редактирования - подставляем текущие данные заявки в форму.
 watch(
   () => [open.value, props.editTool],
@@ -141,15 +153,6 @@ watch(
   },
   { immediate: true }
 )
-
-// Незаполненные/некорректные обязательные поля подсвечиваются красным при попытке отправки.
-// Краткое описание и ограничения необязательны, поэтому в этот список не входят.
-const invalidFields = reactive({
-  name: false,
-  description: false,
-  roles: false,
-  sourceLabel: false
-})
 
 // Ссылка на инструмент принимается только с внутренних корпоративных сервисов (см. тот же
 // список и комментарий на бэкенде - ToolDtos.kt/URL_PATTERN). Токен должен начинать доменную

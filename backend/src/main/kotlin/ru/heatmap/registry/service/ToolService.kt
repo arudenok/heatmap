@@ -23,6 +23,7 @@ import ru.heatmap.registry.repository.AppUserRepository
 import ru.heatmap.registry.repository.PresetConstraintRepository
 import ru.heatmap.registry.repository.PresetRoleRepository
 import ru.heatmap.registry.repository.ToolDownloadRepository
+import ru.heatmap.registry.repository.ToolNoteRepository
 import ru.heatmap.registry.repository.ToolRatingRepository
 import ru.heatmap.registry.security.UserPrincipal
 import ru.heatmap.registry.specification.collectionContainsAnySpec
@@ -58,6 +59,7 @@ class ToolService(
     private val appUserRepository: AppUserRepository,
     private val toolRatingRepository: ToolRatingRepository,
     private val toolDownloadRepository: ToolDownloadRepository,
+    private val toolNoteRepository: ToolNoteRepository,
     private val presetRoleRepository: PresetRoleRepository,
     private val presetConstraintRepository: PresetConstraintRepository,
     private val notificationService: NotificationService,
@@ -316,6 +318,12 @@ class ToolService(
         if (!isAdmin && !isOwner) {
             throw ForbiddenException("Удалить можно только собственный инструмент")
         }
+        // Связь AiTool -> ToolRating/ToolDownload/ToolNote однонаправленная (нет @OneToMany),
+        // поэтому JPA не каскадирует удаление - нужно явно почистить зависимые записи, иначе
+        // упадём на FK constraint violation (см. аналогичный паттерн в AdminUserService.delete).
+        toolRatingRepository.deleteAllByToolId(id)
+        toolDownloadRepository.deleteAllByToolId(id)
+        toolNoteRepository.deleteAllByToolId(id)
         aiToolRepository.delete(tool)
     }
 

@@ -13,4 +13,8 @@ interface ToolNoteRepository : JpaRepository<ToolNote, UUID> {
     // Нужно при удалении пользователя администратором - иначе FK author_id в tool_note
     // помешает удалить саму запись app_user (см. AdminUserService.delete).
     fun deleteAllByAuthorId(authorId: UUID)
+
+    // Нужно при удалении инструмента - иначе FK tool_id в tool_note помешает удалить
+    // саму запись ai_tool (см. ToolService.delete).
+    fun deleteAllByToolId(toolId: UUID)
 }

@@ -32,6 +32,7 @@ class ToolNoteService(
     private val toolNoteMapper: ToolNoteMapper
 ) {
 
+    @Transactional(readOnly = true)
     fun listByTool(toolId: UUID, principal: UserPrincipal): List<ToolNoteResponse> {
         if (!aiToolRepository.existsById(toolId)) throw NotFoundException("Инструмент не найден")
         return toolNoteRepository.findByToolIdOrderByCreatedAtAsc(toolId).map { toResponse(it, principal) }

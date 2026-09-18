@@ -10,6 +10,10 @@ const loading = ref(true)
 const error = ref('')
 const busyId = ref(null)
 const hover = ref({})
+// Отдельная от `error` ошибка - ошибка сохранения оценки не должна прятать уже загруженный
+// список инструментов (см. rate() ниже): раньше она попадала в тот же `error`, из-за которого
+// список целиком подменялся текстом ошибки, даже когда сами инструменты благополучно загружены.
+const rateError = ref('')
 
 const stageMeta = {
   ACCESS: { label: 'Access', class: 'stage-access' },
@@ -38,11 +42,12 @@ async function load() {
 async function rate(tool, value) {
   if (busyId.value) return
   busyId.value = tool.id
+  rateError.value = ''
   try {
     const { data } = await api.post(`/tools/${tool.id}/rating`, { rating: value })
     Object.assign(tool, data)
   } catch (e) {
-    error.value = extractErrorMessage(e, 'Не удалось сохранить оценку')
+    rateError.value = extractErrorMessage(e, 'Не удалось сохранить оценку')
   } finally {
     busyId.value = null
   }
@@ -53,7 +58,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div v-if="auth.isAuthenticated && (loading || tools.length)" class="my-downloads panel">
+  <div v-if="auth.isAuthenticated && (loading || tools.length || error)" class="my-downloads panel">
     <div class="my-downloads-title"><IconBase name="download" :size="15" /> Мои инструменты</div>
 
     <div v-if="loading" class="skeleton" style="height: 48px;"></div>
@@ -61,6 +66,7 @@ onMounted(load)
     <p v-else-if="error" class="error-text">{{ error }}</p>
 
     <div v-else class="my-downloads-list">
+      <p v-if="rateError" class="error-text">{{ rateError }}</p>
       <div v-for="tool in tools" :key="tool.id" class="my-downloads-row">
         <div class="my-downloads-name">
           {{ tool.name }}

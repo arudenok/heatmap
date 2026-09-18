@@ -1,0 +1,26 @@
+# Профиль для тестов (@ActiveProfiles("test")) - переопределяет только то, что должно отличаться
+# от src/main/resources/application.yml: файловую H2 (общую для всех запусков) на изолированную
+# in-memory базу, поднимаемую заново под каждый Spring-контекст, плюс тестовый JWT-секрет.
+# Остальные настройки (liquibase, ddl-auto: validate и т.п.) наследуются из application.yml.
+spring:
+  datasource:
+    url: jdbc:h2:mem:heatmap_test;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  h2:
+    console:
+      enabled: false
+
+heatmap:
+  jwt:
+    secret: dGVzdC1zZWNyZXQta2V5LWZvci1oZWF0bWFwLXJlZ2lzdHJ5LXRlc3RzLW9ubHktZG8tbm90LXVzZQ==
+    access-token-ttl-minutes: 60
+  cors:
+    allowed-origins: http://localhost:5173
+
+logging:
+  level:
+    ru.heatmap: WARN
+    liquibase: WARN
